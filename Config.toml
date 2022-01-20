@@ -1,0 +1,6 @@
+timeframe = 3600 # seconds
+incorrect_nonce_threshold = 30
+max_gas_threshold = 5
+revert_threshold = 100
+excessive_gas_threshold = 30000
+token_multiplier = 10
