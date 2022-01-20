@@ -25,35 +25,16 @@ fn main() -> io::Result<()> {
             }
         };
 
-        let ip = relayer_input.client;
-        if ban_manager.ban_list().ip.contains_key(&ip) {
-            continue;
-        }
-
-        let from = relayer_input.params.from;
-        if ban_manager.ban_list().from.contains_key(&from) {
-            continue;
-        }
-
-        if let Some(token) = relayer_input.token.clone() {
-            if ban_manager.ban_list().token.contains_key(&token) {
-                continue;
-            }
-        }
-
-        let bans = ban_manager.read_input(&relayer_input);
-        for ban in bans {
-            println!("BANNED: {:?}", ban);
-        }
+        ban_manager.read_input(&relayer_input);
 
         ban_manager.tick(time);
 
         if time.elapsed() > Duration::from_secs(10800) {
             let ban_list = ban_manager.ban_list();
 
-            let banned_clients = ban_list.ip.len();
-            let banned_froms = ban_list.from.len();
-            let banned_tokens = ban_list.token.len();
+            let banned_clients = ban_list.clients.len();
+            let banned_froms = ban_list.froms.len();
+            let banned_tokens = ban_list.tokens.len();
             println!("Banned Clients: {banned_clients}");
             println!("Banned Froms: {banned_froms}");
             println!("Banned Tokens: {banned_tokens}");
