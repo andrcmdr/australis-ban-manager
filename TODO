@@ -1,0 +1,9 @@
+- Track successful transactions, will help with decision if the rules are
+imbalanced.
+- Implement gas increment when the fields are added to the relayer.
+- Tracing logging
+- Tests
+- Refactor everything
+- Save periodically as JSON
+- Load data, if it exists
+- Set ban reason in ban list

@@ -168,8 +168,13 @@ fn check_error_ban(
     ban_progress: &mut BanProgress,
     config: &Config,
     token: Option<&Token>,
-    error: &TransactionError,
+    maybe_error: Option<&TransactionError>,
 ) -> bool {
+    let error = if let Some(error) = maybe_error {
+        error
+    } else {
+        return false;
+    };
     match error {
         TransactionError::ErrIncorrectNonce => {
             let threshold = {
@@ -240,34 +245,43 @@ impl Banhammer {
         // gas: // TODO when added to relayer
     ) -> (bool, bool, bool) {
         // TODO excessive gas
-        let client_progress = &mut self
-            .user_clients
-            .get_mut(&user.client)
-            .expect("`UserClient` missing.")
-            .ban_progress;
-        let from_progress = &mut self
-            .user_froms
-            .get_mut(&user.from)
-            .expect("`UserFrom' missing.")
-            .ban_progress;
-        let token_progress = token.map(|token| {
-            &mut self
-                .user_tokens
-                .get_mut(token)
-                .expect("'UserToken' missing.")
-                .ban_progress
-        });
-        let (is_client_banned, is_from_banned, is_token_banned) = if let Some(error) = maybe_error {
-            let is_client_banned = check_error_ban(client_progress, &self.config, token, error);
-            let is_from_banned = check_error_ban(from_progress, &self.config, token, error);
-            let is_token_banned = if let Some(token_progress) = token_progress {
-                check_error_ban(token_progress, &self.config, token, error)
+        let is_client_banned = if !self.ban_list.clients.contains_key(&user.client) {
+            let client_progress = &mut self
+                .user_clients
+                .get_mut(&user.client)
+                .expect("`UserClient` missing.")
+                .ban_progress;
+            check_error_ban(client_progress, &self.config, token, maybe_error)
+        } else {
+            false
+        };
+
+        let is_from_banned = if !self.ban_list.froms.contains_key(&user.from) {
+            let from_progress = &mut self
+                .user_froms
+                .get_mut(&user.from)
+                .expect("`UserFrom' missing.")
+                .ban_progress;
+            check_error_ban(from_progress, &self.config, token, maybe_error)
+        } else {
+            false
+        };
+
+        let is_token_banned = {
+            if let Some(token) = token {
+                if !self.ban_list.tokens.contains_key(token) {
+                    let token_progress = &mut self
+                        .user_tokens
+                        .get_mut(token)
+                        .expect("'UserToken' missing.")
+                        .ban_progress;
+                    check_error_ban(token_progress, &self.config, Some(token), maybe_error)
+                } else {
+                    false
+                }
             } else {
                 false
-            };
-            (is_client_banned, is_from_banned, is_token_banned)
-        } else {
-            (false, false, false)
+            }
         };
 
         (is_client_banned, is_from_banned, is_token_banned)
