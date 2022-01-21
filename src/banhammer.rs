@@ -10,6 +10,7 @@ use std::{
     net::IpAddr,
     time::{Duration, Instant},
 };
+use tracing::info;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct BanProgress {
@@ -380,7 +381,7 @@ impl Banhammer {
             self.ban_progression(&user, user.token.as_ref(), maybe_error);
 
         if let Some(ban_reason) = maybe_client_banned {
-            println!(
+            info!(
                 "BANNED client: {}, reason: {:?}",
                 user.client,
                 maybe_error.expect("Error expected")
@@ -393,7 +394,7 @@ impl Banhammer {
             self.ban_list.clients.insert(user.client, user_client);
         }
         if let Some(ban_reason) = maybe_from_banned {
-            println!(
+            info!(
                 "BANNED from: {:?}, reason: {:?}",
                 user.from,
                 maybe_error.expect("Error expected")
@@ -407,7 +408,7 @@ impl Banhammer {
         }
         if let Some(ban_reason) = maybe_token_banned {
             let token = user.token.expect("'Token' missing.");
-            println!(
+            info!(
                 "BANNED token: {:?}, reason: {:?}",
                 token,
                 maybe_error.expect("Error expected")

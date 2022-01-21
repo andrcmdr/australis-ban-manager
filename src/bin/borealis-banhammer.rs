@@ -6,8 +6,11 @@ use std::{
     fs, io,
     time::{Duration, Instant},
 };
+use tracing::info;
 
 fn main() -> io::Result<()> {
+    tracing_subscriber::fmt::init();
+
     let raw_toml = fs::read_to_string("./Config.toml").expect("Missing Config.toml.");
     let ban_manager_config: banhammer::Config =
         toml::from_str(&raw_toml).expect("Failed to parse TOML.");
@@ -35,10 +38,10 @@ fn main() -> io::Result<()> {
             let banned_clients = ban_list.clients.len();
             let banned_froms = ban_list.froms.len();
             let banned_tokens = ban_list.tokens.len();
-            println!("Banned Clients: {banned_clients}");
-            println!("Banned Froms: {banned_froms}");
-            println!("Banned Tokens: {banned_tokens}");
-            println!("{ban_list:#?}");
+            info!("Banned Clients: {banned_clients}");
+            info!("Banned Froms: {banned_froms}");
+            info!("Banned Tokens: {banned_tokens}");
+            info!("{ban_list:#?}");
             break;
         }
     }
