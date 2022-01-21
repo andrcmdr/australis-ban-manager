@@ -220,7 +220,7 @@ fn check_error_ban(
                 }
             };
             ban_progress.revert.push(msg.clone());
-            if ban_progress.max_gas >= threshold {
+            if ban_progress.revert.len() as u32 >= threshold {
                 Some(BanReason::TooManyReverts)
             } else {
                 None
