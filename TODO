@@ -6,4 +6,3 @@ imbalanced.
 - Refactor everything
 - Save periodically as JSON
 - Load data, if it exists
-- Set ban reason in ban list

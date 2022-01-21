@@ -27,6 +27,14 @@ pub struct BanList {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BanReason {
+    TooManyIncorrectNonce,
+    TooManyMaxGas,
+    TooManyReverts,
+    UsedExcessiveGas,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BanKind {
     IncorrectNonce,
     MaxGas,
@@ -39,7 +47,7 @@ pub struct UserClient {
     tokens: Vec<Token>,
     froms: Vec<Address>,
     ban_progress: BanProgress,
-    banned: Option<BanKind>,
+    banned: Option<BanReason>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
@@ -47,7 +55,7 @@ pub struct UserFrom {
     clients: Vec<IpAddr>,
     tokens: Vec<Token>,
     ban_progress: BanProgress,
-    banned: Option<BanKind>,
+    banned: Option<BanReason>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
@@ -55,7 +63,7 @@ pub struct UserToken {
     clients: Vec<IpAddr>,
     froms: Vec<Address>,
     ban_progress: BanProgress,
-    banned: Option<BanKind>,
+    banned: Option<BanReason>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -169,12 +177,8 @@ fn check_error_ban(
     config: &Config,
     token: Option<&Token>,
     maybe_error: Option<&TransactionError>,
-) -> bool {
-    let error = if let Some(error) = maybe_error {
-        error
-    } else {
-        return false;
-    };
+) -> Option<BanReason> {
+    let error = maybe_error?;
     match error {
         TransactionError::ErrIncorrectNonce => {
             let threshold = {
@@ -185,7 +189,11 @@ fn check_error_ban(
                 }
             };
             ban_progress.incorrect_nonce += 1;
-            ban_progress.incorrect_nonce >= threshold
+            if ban_progress.incorrect_nonce >= threshold {
+                Some(BanReason::TooManyIncorrectNonce)
+            } else {
+                None
+            }
         }
         TransactionError::MaxGas => {
             let threshold = {
@@ -196,7 +204,11 @@ fn check_error_ban(
                 }
             };
             ban_progress.max_gas += 1;
-            ban_progress.max_gas >= threshold
+            if ban_progress.max_gas >= threshold {
+                Some(BanReason::TooManyMaxGas)
+            } else {
+                None
+            }
         }
         TransactionError::Revert(msg) => {
             let threshold = {
@@ -207,9 +219,13 @@ fn check_error_ban(
                 }
             };
             ban_progress.revert.push(msg.clone());
-            ban_progress.max_gas >= threshold
+            if ban_progress.max_gas >= threshold {
+                Some(BanReason::TooManyReverts)
+            } else {
+                None
+            }
         }
-        TransactionError::Relayer(_) => false,
+        TransactionError::Relayer(_) => None,
     }
 }
 
@@ -243,9 +259,9 @@ impl Banhammer {
         token: Option<&Token>,
         maybe_error: Option<&TransactionError>,
         // gas: // TODO when added to relayer
-    ) -> (bool, bool, bool) {
+    ) -> (Option<BanReason>, Option<BanReason>, Option<BanReason>) {
         // TODO excessive gas
-        let is_client_banned = if !self.ban_list.clients.contains_key(&user.client) {
+        let maybe_client_banned = if !self.ban_list.clients.contains_key(&user.client) {
             let client_progress = &mut self
                 .user_clients
                 .get_mut(&user.client)
@@ -253,10 +269,10 @@ impl Banhammer {
                 .ban_progress;
             check_error_ban(client_progress, &self.config, token, maybe_error)
         } else {
-            false
+            None
         };
 
-        let is_from_banned = if !self.ban_list.froms.contains_key(&user.from) {
+        let maybe_from_banned = if !self.ban_list.froms.contains_key(&user.from) {
             let from_progress = &mut self
                 .user_froms
                 .get_mut(&user.from)
@@ -264,10 +280,10 @@ impl Banhammer {
                 .ban_progress;
             check_error_ban(from_progress, &self.config, token, maybe_error)
         } else {
-            false
+            None
         };
 
-        let is_token_banned = {
+        let maybe_token_banned = {
             if let Some(token) = token {
                 if !self.ban_list.tokens.contains_key(token) {
                     let token_progress = &mut self
@@ -277,14 +293,14 @@ impl Banhammer {
                         .ban_progress;
                     check_error_ban(token_progress, &self.config, Some(token), maybe_error)
                 } else {
-                    false
+                    None
                 }
             } else {
-                false
+                None
             }
         };
 
-        (is_client_banned, is_from_banned, is_token_banned)
+        (maybe_client_banned, maybe_from_banned, maybe_token_banned)
     }
 
     fn associate_with_user_client(
@@ -360,44 +376,47 @@ impl Banhammer {
             self.associate_with_user_token(token, user.client, user.from);
         }
 
-        let (is_client_banned, is_from_banned, is_token_banned) =
+        let (maybe_client_banned, maybe_from_banned, maybe_token_banned) =
             self.ban_progression(&user, user.token.as_ref(), maybe_error);
 
-        if is_client_banned {
+        if let Some(ban_reason) = maybe_client_banned {
             println!(
                 "BANNED client: {}, reason: {:?}",
                 user.client,
                 maybe_error.expect("Error expected")
             );
-            let user_client = self
+            let mut user_client = self
                 .user_clients
                 .remove(&user.client)
                 .expect("`UserClient` missing.");
+            user_client.banned = Some(ban_reason);
             self.ban_list.clients.insert(user.client, user_client);
         }
-        if is_from_banned {
+        if let Some(ban_reason) = maybe_from_banned {
             println!(
                 "BANNED from: {:?}, reason: {:?}",
                 user.from,
                 maybe_error.expect("Error expected")
             );
-            let user_from = self
+            let mut user_from = self
                 .user_froms
                 .remove(&user.from)
                 .expect("`UserFrom` missing.");
+            user_from.banned = Some(ban_reason);
             self.ban_list.froms.insert(user.from, user_from);
         }
-        if is_token_banned {
+        if let Some(ban_reason) = maybe_token_banned {
             let token = user.token.expect("'Token' missing.");
             println!(
                 "BANNED token: {:?}, reason: {:?}",
                 token,
                 maybe_error.expect("Error expected")
             );
-            let user_token = self
+            let mut user_token = self
                 .user_tokens
                 .remove(&token)
                 .expect("`UserToken` missing.");
+            user_token.banned = Some(ban_reason);
             self.ban_list.tokens.insert(token, user_token);
         }
     }
