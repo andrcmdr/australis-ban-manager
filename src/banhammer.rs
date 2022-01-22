@@ -363,6 +363,22 @@ impl Banhammer {
         }
     }
 
+    fn increment_transaction_count(&mut self, user: &User) {
+        let user_client = self.user_clients.get_mut(&user.client).expect("'UserClient' missing.");
+        user_client.transaction_count += 1;
+        // user_client.last_update = SystemTime::now();
+
+        let user_from = self.user_froms.get_mut(&user.from).expect("'UserFrom' missing");
+        user_from.transaction_count += 1;
+        // user_from.last_update = SystemTime::now();
+
+        if let Some(token) = &user.token {
+            let user_token = self.user_tokens.get_mut(token).expect("'UserToken' missing");
+            user_token.transaction_count += 1;
+            // user_token.last_update = SystemTime::now();
+        }
+    }
+
     pub fn read_input(&mut self, input: &RelayerInput) {
         let maybe_error = input.error.as_ref();
         let user = User {
@@ -376,6 +392,8 @@ impl Banhammer {
         if let Some(token) = user.token.clone() {
             self.associate_with_user_token(token, user.client, user.from);
         }
+
+        self.increment_transaction_count(&user);
 
         let (maybe_client_banned, maybe_from_banned, maybe_token_banned) =
             self.ban_progression(&user, user.token.as_ref(), maybe_error);
@@ -422,7 +440,19 @@ impl Banhammer {
         }
     }
 
-    pub fn ban_list(&self) -> &BanList {
+    pub fn user_clients(&self) -> &HashMap<IpAddr, UserClient> {
+        &self.user_clients
+    }
+
+    pub fn user_froms(&self) -> &HashMap<Address, UserFrom> {
+        &self.user_froms
+    }
+
+    pub fn user_tokens(&self) -> &HashMap<Token, UserToken> {
+        &self.user_tokens
+    }
+
+    pub fn bans(&self) -> &BanList {
         &self.ban_list
     }
 }

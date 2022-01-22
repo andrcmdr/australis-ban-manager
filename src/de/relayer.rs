@@ -3,6 +3,7 @@ use http::{StatusCode, Uri};
 use serde::{
     de::{self, Error, Visitor},
     Deserialize, Deserializer,
+    Serialize,
 };
 use std::{
     fmt::{self, Formatter},
@@ -293,7 +294,7 @@ where
     deserializer.deserialize_str(TransactionErrorVisitor)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct Token(String);
 
 fn deserialize_token<'de, D>(deserializer: D) -> Result<Option<Token>, D::Error>

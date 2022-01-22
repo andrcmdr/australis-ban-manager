@@ -3,5 +3,12 @@ imbalanced.
 - Implement gas increment when the fields are added to the relayer.
 - Tests
 - Refactor everything
-- Save periodically as JSON
 - Load data, if it exists
+- Parallelization
+- Unix timestamp when banned and updated
+- how much gas banned users used
+- Our gas burn daily
+- Store data in a DB on disk
+    - Temp hold in mem or X time, reduce amount of reads on disk
+- Unban user logic
+- Add check of % of transaaction are successful or not. If 20% fail, ban. Add % to config.

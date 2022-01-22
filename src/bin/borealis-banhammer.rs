@@ -6,7 +6,8 @@ use std::{
     fs, io,
     time::{Duration, Instant},
 };
-use tracing::info;
+use tracing::{info, debug};
+use std::time::SystemTime;
 
 fn main() -> io::Result<()> {
     tracing_subscriber::fmt::init();
@@ -16,6 +17,10 @@ fn main() -> io::Result<()> {
         toml::from_str(&raw_toml).expect("Failed to parse TOML.");
     let mut ban_manager = Banhammer::new(ban_manager_config);
     let time = Instant::now();
+    let mut next_save = Duration::from_secs(60);
+
+    info!("{:?}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH));
+    info!("Starting banhammer...");
     loop {
         let mut buffer = String::new();
         let stdin = io::stdin();
@@ -32,8 +37,25 @@ fn main() -> io::Result<()> {
 
         ban_manager.tick(time);
 
+        if time.elapsed() > next_save {
+            debug!("Writing state");
+
+            fs::remove_file("./clients.json").ok();
+            let json = serde_json::to_string_pretty(&ban_manager.user_clients()).unwrap();
+            fs::write("./clients.json", json).unwrap();
+
+            fs::remove_file("./addresses.json").ok();
+            let json = serde_json::to_string_pretty(&ban_manager.user_clients()).unwrap();
+            fs::write("./addresses.json", json).unwrap();
+
+            fs::remove_file("./bans.json").ok();
+            let json = serde_json::to_string_pretty(&ban_manager.bans()).unwrap();
+            fs::write("./bans.json", json).unwrap();
+            next_save += Duration::from_secs(60);
+        }
+
         if time.elapsed() > Duration::from_secs(10800) {
-            let ban_list = ban_manager.ban_list();
+            let ban_list = ban_manager.bans();
 
             let banned_clients = ban_list.clients.len();
             let banned_froms = ban_list.froms.len();
