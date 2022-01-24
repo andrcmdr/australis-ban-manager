@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     fmt::{self},
     net::IpAddr,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
 use tracing::info;
 
@@ -53,7 +53,6 @@ pub struct UserClient {
     banned: Option<BanReason>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct UserFrom {
     clients: Vec<IpAddr>,
@@ -64,7 +63,6 @@ pub struct UserFrom {
     // last_update: SystemTime,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct UserToken {
     clients: Vec<IpAddr>,
@@ -74,15 +72,6 @@ pub struct UserToken {
     banned: Option<BanReason>,
     // last_update: SystemTime,
 }
-
-// impl Default for UserToken {
-//     fn default() -> Self {
-//         Self {
-//             last_update: SystemTime::now(),
-//             ..Default::default()
-//         }
-//     }
-// }
 
 fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
