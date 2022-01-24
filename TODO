@@ -11,4 +11,4 @@ imbalanced.
 - Store data in a DB on disk
     - Temp hold in mem or X time, reduce amount of reads on disk
 - Unban user logic
-- Add check of % of transaaction are successful or not. If 20% fail, ban. Add % to config.
+- Add check of % of transaction are successful or not. If 20% fail, ban. Add % to config.

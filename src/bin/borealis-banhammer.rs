@@ -48,6 +48,10 @@ fn main() -> io::Result<()> {
             let json = serde_json::to_string_pretty(&ban_manager.user_clients()).unwrap();
             fs::write("./addresses.json", json).unwrap();
 
+            fs::remove_file("./tokens.json").ok();
+            let json = serde_json::to_string_pretty(&ban_manager.user_tokens()).unwrap();
+            fs::write("./tokens.json", json).unwrap();
+
             fs::remove_file("./bans.json").ok();
             let json = serde_json::to_string_pretty(&ban_manager.bans()).unwrap();
             fs::write("./bans.json", json).unwrap();
