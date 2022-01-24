@@ -2,17 +2,17 @@ use crate::de::{RelayerInput, Token, TransactionError};
 use ethereum_types::Address;
 use serde::{
     de::{self, Error, Visitor},
-    Deserialize, Deserializer,
+    Deserialize, Deserializer, Serialize,
 };
 use std::{
     collections::HashMap,
     fmt::{self},
     net::IpAddr,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use tracing::info;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct BanProgress {
     incorrect_nonce: u32,
     max_gas: u32,
@@ -20,19 +20,20 @@ pub struct BanProgress {
     excessive_gas: u32,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct BanList {
     pub clients: HashMap<IpAddr, UserClient>,
     pub tokens: HashMap<Token, UserToken>,
     pub froms: HashMap<Address, UserFrom>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum BanReason {
     TooManyIncorrectNonce,
     TooManyMaxGas,
     TooManyReverts,
     UsedExcessiveGas,
+    Custom(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -43,42 +44,45 @@ pub enum BanKind {
     ExcessiveGas(u32),
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct UserClient {
     tokens: Vec<Token>,
     froms: Vec<Address>,
+    transaction_count: u64,
     ban_progress: BanProgress,
     banned: Option<BanReason>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct UserFrom {
     clients: Vec<IpAddr>,
     tokens: Vec<Token>,
+    transaction_count: u64,
     ban_progress: BanProgress,
     banned: Option<BanReason>,
+    // last_update: SystemTime,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct UserToken {
     clients: Vec<IpAddr>,
     froms: Vec<Address>,
+    transaction_count: u64,
     ban_progress: BanProgress,
     banned: Option<BanReason>,
+    // last_update: SystemTime,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum UserKind {
-    Client(UserClient),
-    From(UserFrom),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum BannedUserKind {
-    Client(IpAddr),
-    Token(Token),
-    From(Address),
-}
+// impl Default for UserToken {
+//     fn default() -> Self {
+//         Self {
+//             last_update: SystemTime::now(),
+//             ..Default::default()
+//         }
+//     }
+// }
 
 fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
@@ -152,7 +156,7 @@ struct User {
     token: Option<Token>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(deserialize_with = "deserialize_duration")]
     timeframe: Duration,
@@ -163,7 +167,7 @@ pub struct Config {
     token_multiplier: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Banhammer {
     next_check: Duration,
     user_clients: HashMap<IpAddr, UserClient>,
@@ -250,6 +254,7 @@ impl Banhammer {
                 client.ban_progress.incorrect_nonce = 0;
                 client.ban_progress.revert = Vec::new();
             }
+            // TODO user_tokens / user_froms
             self.next_check += self.config.timeframe;
         }
     }
@@ -364,16 +369,25 @@ impl Banhammer {
     }
 
     fn increment_transaction_count(&mut self, user: &User) {
-        let user_client = self.user_clients.get_mut(&user.client).expect("'UserClient' missing.");
+        let user_client = self
+            .user_clients
+            .get_mut(&user.client)
+            .expect("'UserClient' missing.");
         user_client.transaction_count += 1;
         // user_client.last_update = SystemTime::now();
 
-        let user_from = self.user_froms.get_mut(&user.from).expect("'UserFrom' missing");
+        let user_from = self
+            .user_froms
+            .get_mut(&user.from)
+            .expect("'UserFrom' missing");
         user_from.transaction_count += 1;
         // user_from.last_update = SystemTime::now();
 
         if let Some(token) = &user.token {
-            let user_token = self.user_tokens.get_mut(token).expect("'UserToken' missing");
+            let user_token = self
+                .user_tokens
+                .get_mut(token)
+                .expect("'UserToken' missing");
             user_token.transaction_count += 1;
             // user_token.last_update = SystemTime::now();
         }

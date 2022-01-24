@@ -2,8 +2,7 @@ use ethereum_types::Address;
 use http::{StatusCode, Uri};
 use serde::{
     de::{self, Error, Visitor},
-    Deserialize, Deserializer,
-    Serialize,
+    Deserialize, Deserializer, Serialize,
 };
 use std::{
     fmt::{self, Formatter},
@@ -273,7 +272,7 @@ where
         where
             E: de::Error,
         {
-            if err.len() == 0 {
+            if err.is_empty() {
                 return Ok(None);
             }
 
@@ -314,7 +313,7 @@ where
         where
             E: de::Error,
         {
-            if token.len() == 0 {
+            if token.is_empty() {
                 Ok(None)
             } else if token.len() != 44 && token.len() != 43 {
                 Err(de::Error::custom(
@@ -377,7 +376,7 @@ mod tests {
   }
 }
 "#;
-        let header: RelayerInput = serde_json::from_str(&input).unwrap();
+        let header: RelayerInput = serde_json::from_str(input).unwrap();
         let tx_bytes = hex::decode("f9020c825a4e8083061a809473cd7b6b17836e4ed282e5b9e6e01fbfb966b44280b901a45b42abc9000000000000000000000000000000000000000000000000215c9f93ceee2b8d000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000004c42c30ac6cc15fac9bd938618bcaa1a1fae8501d180000042a99168543b200fcc4bdd27c33ec7daa6fcfd8532ddb524bf4038096120010aa6550b34b69531c9cc9bdeed33cd01541e1eed10f90519d2c06fe3feb1242a991685479899ea824dbfa94348467f64d5a457f75f8bc40495d33c65aba18a6550b35bc3364c2f4c612000000000000000000000000000000000000000000000000000000000000000424f6c59747e4aceb3dba365df77d68c2a3aa4fb126fc0000215c9f93ceee2b8d747f3861eb4b98e61682da7687aa140e373b698e26f200857276181c5c5d8f87d263fc38d75928c965ed3507ceb2ce60fce4001626f015c9f93cecf771290b6484b123875f0f36b966d0b6ca14b31121bd9676ad2ea5276181cd92ff99f1da46849c8a82c8a0e55e5767cc04c5fa7b26759c236c90be4125056aff5faeb00a0e3fc64a949e66a00b9f4c971ab138d624ae8691d40e6ad1fff3983ac6c6e6ad2dff7ac8d186a9b7").unwrap();
         let from_address_bytes = hex::decode("d85dea6093118b54318e10c6654a2b2e1a6b40c6").unwrap();
         let to_address_bytes = hex::decode("73cd7b6b17836e4ed282e5b9e6e01fbfb966b442").unwrap();

@@ -4,10 +4,9 @@ use borealis_banhammer::{
 };
 use std::{
     fs, io,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
-use tracing::{info, debug};
-use std::time::SystemTime;
+use tracing::{debug, info};
 
 fn main() -> io::Result<()> {
     tracing_subscriber::fmt::init();
@@ -19,7 +18,10 @@ fn main() -> io::Result<()> {
     let time = Instant::now();
     let mut next_save = Duration::from_secs(60);
 
-    info!("{:?}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH));
+    info!(
+        "{:?}",
+        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+    );
     info!("Starting banhammer...");
     loop {
         let mut buffer = String::new();
@@ -29,6 +31,7 @@ fn main() -> io::Result<()> {
         let relayer_input: RelayerInput = match serde_json::from_str(&buffer) {
             Ok(r) => r,
             Err(_e) => {
+                // TODO relayer failed parses
                 continue;
             }
         };
