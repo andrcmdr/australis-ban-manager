@@ -48,7 +48,7 @@ fn main() -> io::Result<()> {
             fs::write("./clients.json", json).unwrap();
 
             fs::remove_file("./addresses.json").ok();
-            let json = serde_json::to_string_pretty(&ban_manager.user_clients()).unwrap();
+            let json = serde_json::to_string_pretty(&ban_manager.user_froms()).unwrap();
             fs::write("./addresses.json", json).unwrap();
 
             fs::remove_file("./tokens.json").ok();
