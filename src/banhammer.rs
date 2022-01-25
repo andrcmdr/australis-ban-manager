@@ -17,7 +17,7 @@ pub struct BanProgress {
     incorrect_nonce: u32,
     max_gas: u32,
     revert: Vec<String>,
-    excessive_gas: u32,
+    excessive_gas: u128,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -60,7 +60,6 @@ pub struct UserAddress {
     transaction_count: u64,
     ban_progress: BanProgress,
     banned: Option<BanReason>,
-    // last_update: SystemTime,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
@@ -70,7 +69,6 @@ pub struct UserToken {
     transaction_count: u64,
     ban_progress: BanProgress,
     banned: Option<BanReason>,
-    // last_update: SystemTime,
 }
 
 fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -152,7 +150,7 @@ pub struct Config {
     incorrect_nonce_threshold: u32,
     max_gas_threshold: u32,
     revert_threshold: u32,
-    // excessive_gas_threshold: u32, // TODO
+    excessive_gas_threshold: u128, // TODO
     token_multiplier: u32,
 }
 
@@ -166,12 +164,25 @@ pub struct Banhammer {
     config: Config,
 }
 
-fn check_error_ban(
+fn check_ban(
     ban_progress: &mut BanProgress,
     config: &Config,
     token: Option<&Token>,
     maybe_error: Option<&TransactionError>,
+    gas_burned: u128,
 ) -> Option<BanReason> {
+    let gas_burned_threshold = {
+        if token.is_some() {
+            config.excessive_gas_threshold * config.token_multiplier as u128
+        } else {
+            config.excessive_gas_threshold
+        }
+    };
+    ban_progress.excessive_gas += gas_burned;
+    if ban_progress.excessive_gas > gas_burned_threshold {
+        return Some(BanReason::UsedExcessiveGas)
+    }
+
     let error = maybe_error?;
     match error {
         TransactionError::ErrIncorrectNonce => {
@@ -253,7 +264,7 @@ impl Banhammer {
         user: &User,
         token: Option<&Token>,
         maybe_error: Option<&TransactionError>,
-        // gas: // TODO when added to relayer
+        gas_burned: u128
     ) -> (Option<BanReason>, Option<BanReason>, Option<BanReason>) {
         // TODO excessive gas
         let maybe_client_banned = if !self.ban_list.clients.contains_key(&user.client) {
@@ -262,7 +273,7 @@ impl Banhammer {
                 .get_mut(&user.client)
                 .expect("`UserClient` missing.")
                 .ban_progress;
-            check_error_ban(client_progress, &self.config, token, maybe_error)
+            check_ban(client_progress, &self.config, token, maybe_error, gas_burned)
         } else {
             None
         };
@@ -273,7 +284,7 @@ impl Banhammer {
                 .get_mut(&user.address)
                 .expect("`UserAddress' missing.")
                 .ban_progress;
-            check_error_ban(address_progress, &self.config, token, maybe_error)
+            check_ban(address_progress, &self.config, token, maybe_error, gas_burned)
         } else {
             None
         };
@@ -286,7 +297,7 @@ impl Banhammer {
                         .get_mut(token)
                         .expect("'UserToken' missing.")
                         .ban_progress;
-                    check_error_ban(token_progress, &self.config, Some(token), maybe_error)
+                    check_ban(token_progress, &self.config, Some(token), maybe_error, gas_burned)
                 } else {
                     None
                 }
@@ -376,7 +387,6 @@ impl Banhammer {
                 .get_mut(token)
                 .expect("'UserToken' missing");
             user_token.transaction_count += 1;
-            // user_token.last_update = SystemTime::now();
         }
     }
 
@@ -397,7 +407,7 @@ impl Banhammer {
         self.increment_transaction_count(&user);
 
         let (maybe_client_banned, maybe_address_banned, maybe_token_banned) =
-            self.ban_progression(&user, user.token.as_ref(), maybe_error);
+            self.ban_progression(&user, user.token.as_ref(), maybe_error, input.params.near_gas_burned);
 
         if let Some(ban_reason) = maybe_client_banned {
             info!(

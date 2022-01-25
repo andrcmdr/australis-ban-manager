@@ -195,7 +195,7 @@ pub struct Params {
     #[serde(deserialize_with = "deserialize_evm_result")]
     pub evm_result: Option<EvmResult>,
     #[serde(rename = "near-gas-burned")]
-    pub near_gas_burned: u64,
+    pub near_gas_burned: u128,
     #[serde(rename = "near-tx-id")]
     pub near_tx: String,
     pub to: Address,
