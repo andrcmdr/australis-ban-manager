@@ -48,7 +48,7 @@ fn main() -> io::Result<()> {
             fs::write("./clients.json", json).unwrap();
 
             fs::remove_file("./addresses.json").ok();
-            let json = serde_json::to_string_pretty(&ban_manager.user_froms()).unwrap();
+            let json = serde_json::to_string_pretty(&ban_manager.user_addresses()).unwrap();
             fs::write("./addresses.json", json).unwrap();
 
             fs::remove_file("./tokens.json").ok();
@@ -65,12 +65,11 @@ fn main() -> io::Result<()> {
             let ban_list = ban_manager.bans();
 
             let banned_clients = ban_list.clients.len();
-            let banned_froms = ban_list.froms.len();
+            let banned_addresses = ban_list.addresses.len();
             let banned_tokens = ban_list.tokens.len();
             info!("Banned Clients: {banned_clients}");
-            info!("Banned Froms: {banned_froms}");
+            info!("Banned Addresses: {banned_addresses}");
             info!("Banned Tokens: {banned_tokens}");
-            info!("{ban_list:#?}");
             break;
         }
     }

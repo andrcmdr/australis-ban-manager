@@ -24,7 +24,7 @@ pub struct BanProgress {
 pub struct BanList {
     pub clients: HashMap<IpAddr, UserClient>,
     pub tokens: HashMap<Token, UserToken>,
-    pub froms: HashMap<Address, UserFrom>,
+    pub addresses: HashMap<Address, UserAddress>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
@@ -47,14 +47,14 @@ pub enum BanKind {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct UserClient {
     tokens: Vec<Token>,
-    froms: Vec<Address>,
+    addresses: Vec<Address>,
     transaction_count: u64,
     ban_progress: BanProgress,
     banned: Option<BanReason>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
-pub struct UserFrom {
+pub struct UserAddress {
     clients: Vec<IpAddr>,
     tokens: Vec<Token>,
     transaction_count: u64,
@@ -66,7 +66,7 @@ pub struct UserFrom {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct UserToken {
     clients: Vec<IpAddr>,
-    froms: Vec<Address>,
+    addresses: Vec<Address>,
     transaction_count: u64,
     ban_progress: BanProgress,
     banned: Option<BanReason>,
@@ -141,7 +141,7 @@ where
 
 struct User {
     client: IpAddr,
-    from: Address,
+    address: Address,
     token: Option<Token>,
 }
 
@@ -160,7 +160,7 @@ pub struct Config {
 pub struct Banhammer {
     next_check: Duration,
     user_clients: HashMap<IpAddr, UserClient>,
-    user_froms: HashMap<Address, UserFrom>,
+    user_addresses: HashMap<Address, UserAddress>,
     user_tokens: HashMap<Token, UserToken>,
     ban_list: BanList,
     config: Config,
@@ -228,7 +228,7 @@ impl Banhammer {
         Self {
             next_check: config.timeframe,
             user_clients: HashMap::default(),
-            user_froms: HashMap::default(),
+            user_addresses: HashMap::default(),
             user_tokens: HashMap::default(),
             ban_list: BanList::default(),
             config,
@@ -267,13 +267,13 @@ impl Banhammer {
             None
         };
 
-        let maybe_from_banned = if !self.ban_list.froms.contains_key(&user.from) {
-            let from_progress = &mut self
-                .user_froms
-                .get_mut(&user.from)
-                .expect("`UserFrom' missing.")
+        let maybe_address_banned = if !self.ban_list.addresses.contains_key(&user.address) {
+            let address_progress = &mut self
+                .user_addresses
+                .get_mut(&user.address)
+                .expect("`UserAddress' missing.")
                 .ban_progress;
-            check_error_ban(from_progress, &self.config, token, maybe_error)
+            check_error_ban(address_progress, &self.config, token, maybe_error)
         } else {
             None
         };
@@ -295,13 +295,13 @@ impl Banhammer {
             }
         };
 
-        (maybe_client_banned, maybe_from_banned, maybe_token_banned)
+        (maybe_client_banned, maybe_address_banned, maybe_token_banned)
     }
 
     fn associate_with_user_client(
         &mut self,
         client: IpAddr,
-        from: Address,
+        address: Address,
         maybe_token: Option<Token>,
     ) {
         let user_client = self
@@ -309,8 +309,8 @@ impl Banhammer {
             .entry(client)
             .or_insert_with(UserClient::default);
 
-        if !user_client.froms.contains(&from) {
-            user_client.froms.push(from)
+        if !user_client.addresses.contains(&address) {
+            user_client.addresses.push(address)
         }
 
         if let Some(token) = maybe_token {
@@ -320,29 +320,29 @@ impl Banhammer {
         }
     }
 
-    fn associate_with_user_from(
+    fn associate_with_user_address(
         &mut self,
-        from: Address,
+        address: Address,
         client: IpAddr,
         maybe_token: Option<Token>,
     ) {
-        let user_from = self
-            .user_froms
-            .entry(from)
-            .or_insert_with(UserFrom::default);
+        let user_address = self
+            .user_addresses
+            .entry(address)
+            .or_insert_with(UserAddress::default);
 
-        if !user_from.clients.contains(&client) {
-            user_from.clients.push(client);
+        if !user_address.clients.contains(&client) {
+            user_address.clients.push(client);
         }
 
         if let Some(token) = maybe_token {
-            if !user_from.tokens.contains(&token) {
-                user_from.tokens.push(token);
+            if !user_address.tokens.contains(&token) {
+                user_address.tokens.push(token);
             }
         }
     }
 
-    fn associate_with_user_token(&mut self, token: Token, client: IpAddr, from: Address) {
+    fn associate_with_user_token(&mut self, token: Token, client: IpAddr, address: Address) {
         let user_token = self
             .user_tokens
             .entry(token)
@@ -352,8 +352,8 @@ impl Banhammer {
             user_token.clients.push(client);
         }
 
-        if !user_token.froms.contains(&from) {
-            user_token.froms.push(from);
+        if !user_token.addresses.contains(&address) {
+            user_token.addresses.push(address);
         }
     }
 
@@ -363,14 +363,12 @@ impl Banhammer {
             .get_mut(&user.client)
             .expect("'UserClient' missing.");
         user_client.transaction_count += 1;
-        // user_client.last_update = SystemTime::now();
 
-        let user_from = self
-            .user_froms
-            .get_mut(&user.from)
-            .expect("'UserFrom' missing");
-        user_from.transaction_count += 1;
-        // user_from.last_update = SystemTime::now();
+        let user_address = self
+            .user_addresses
+            .get_mut(&user.address)
+            .expect("'UserAddress' missing");
+        user_address.transaction_count += 1;
 
         if let Some(token) = &user.token {
             let user_token = self
@@ -386,19 +384,19 @@ impl Banhammer {
         let maybe_error = input.error.as_ref();
         let user = User {
             client: input.client,
-            from: input.params.from,
+            address: input.params.from,
             token: input.token.clone(),
         };
 
-        self.associate_with_user_client(user.client, user.from, user.token.clone());
-        self.associate_with_user_from(user.from, user.client, user.token.clone());
+        self.associate_with_user_client(user.client, user.address, user.token.clone());
+        self.associate_with_user_address(user.address, user.client, user.token.clone());
         if let Some(token) = user.token.clone() {
-            self.associate_with_user_token(token, user.client, user.from);
+            self.associate_with_user_token(token, user.client, user.address);
         }
 
         self.increment_transaction_count(&user);
 
-        let (maybe_client_banned, maybe_from_banned, maybe_token_banned) =
+        let (maybe_client_banned, maybe_address_banned, maybe_token_banned) =
             self.ban_progression(&user, user.token.as_ref(), maybe_error);
 
         if let Some(ban_reason) = maybe_client_banned {
@@ -414,18 +412,18 @@ impl Banhammer {
             user_client.banned = Some(ban_reason);
             self.ban_list.clients.insert(user.client, user_client);
         }
-        if let Some(ban_reason) = maybe_from_banned {
+        if let Some(ban_reason) = maybe_address_banned {
             info!(
-                "BANNED from: {:?}, reason: {:?}",
-                user.from,
+                "BANNED address: {:?}, reason: {:?}",
+                user.address,
                 maybe_error.expect("Error expected")
             );
-            let mut user_from = self
-                .user_froms
-                .remove(&user.from)
-                .expect("`UserFrom` missing.");
-            user_from.banned = Some(ban_reason);
-            self.ban_list.froms.insert(user.from, user_from);
+            let mut user_address = self
+                .user_addresses
+                .remove(&user.address)
+                .expect("`UserAddress` missing.");
+            user_address.banned = Some(ban_reason);
+            self.ban_list.addresses.insert(user.address, user_address);
         }
         if let Some(ban_reason) = maybe_token_banned {
             let token = user.token.expect("'Token' missing.");
@@ -447,8 +445,8 @@ impl Banhammer {
         &self.user_clients
     }
 
-    pub fn user_froms(&self) -> &HashMap<Address, UserFrom> {
-        &self.user_froms
+    pub fn user_addresses(&self) -> &HashMap<Address, UserAddress> {
+        &self.user_addresses
     }
 
     pub fn user_tokens(&self) -> &HashMap<Token, UserToken> {
