@@ -1,3 +1,3 @@
 mod relayer;
 
-pub use relayer::{Params, RelayerInput, Timestamp, Token, Transaction, TransactionError, Url};
+pub use relayer::{Params, RelayerMessage, Timestamp, Token, Transaction, TransactionError, Url};

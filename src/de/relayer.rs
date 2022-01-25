@@ -92,9 +92,112 @@ impl fmt::Display for Transaction {
     }
 }
 
+#[derive(PartialEq)]
+// TODO: Deserialize into actual result.
+pub struct EvmResult(Vec<u8>);
+
+impl fmt::Debug for EvmResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let field = {
+            let mut field = "0x".to_string();
+            let field_hex = hex::encode(&self.0);
+            field.push_str(&field_hex);
+            field
+        };
+        f.debug_tuple("EvmResult").field(&field).finish()
+    }
+}
+
+impl fmt::Display for EvmResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let field = {
+            let mut field = "0x".to_string();
+            let field_hex = hex::encode(&self.0);
+            field.push_str(&field_hex);
+            field
+        };
+        f.write_str(&field)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SignatureVersion {
+    Legacy,
+    Eip2930,
+    Eip1559,
+}
+
+fn deserialize_signature_version<'de, D>(deserializer: D) -> Result<SignatureVersion, D::Error>
+    where
+        D: Deserializer<'de>,
+{
+    struct SignatureVersionVisitor;
+
+    impl<'de> Visitor<'de> for SignatureVersionVisitor {
+        type Value = SignatureVersion;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("signature version as str")
+        }
+
+        fn visit_str<E>(self, signature_version: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+        {
+            match signature_version {
+                "Berlin" => Ok(SignatureVersion::Eip2930),
+                "London" => Ok(SignatureVersion::Eip1559),
+                _ => Err(de::Error::custom(format!("Unknown signature version: {signature_version}"))),
+            }
+        }
+    }
+
+    deserializer.deserialize_str(SignatureVersionVisitor)
+}
+
+fn deserialize_evm_result<'de, D>(deserializer: D) -> Result<Option<EvmResult>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct EvmResultVisitor;
+
+    impl<'de> Visitor<'de> for EvmResultVisitor {
+        type Value = Option<EvmResult>;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("expected no hex or hex")
+        }
+
+        fn visit_str<E>(self, evm_result: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if evm_result.is_empty() {
+                return Ok(None);
+            }
+
+            let result_hex = evm_result.trim_start_matches("0x");
+            let hex = hex::decode(result_hex).map_err(de::Error::custom)?;
+            Ok(Some(EvmResult(hex)))
+        }
+    }
+
+    deserializer.deserialize_str(EvmResultVisitor)
+}
+
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct Params {
     pub from: Address,
+    #[serde(rename = "sigversion")]
+    #[serde(deserialize_with = "deserialize_signature_version")]
+    pub signature_version: SignatureVersion,
+    #[serde(rename = "aurora-result")]
+    #[serde(deserialize_with = "deserialize_evm_result")]
+    pub evm_result: Option<EvmResult>,
+    #[serde(rename = "near-gas-burned")]
+    pub near_gas_burned: u64,
+    #[serde(rename = "near-tx-id")]
+    pub near_tx: String,
     pub to: Address,
     pub eth_gas: u32,
     pub eth_nonce: u32,
@@ -329,7 +432,7 @@ where
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
-pub struct RelayerInput {
+pub struct RelayerMessage {
     pub host: Url,
     pub timestamp: Timestamp,
     pub status: Status,
@@ -341,13 +444,14 @@ pub struct RelayerInput {
     pub error: Option<TransactionError>,
     #[serde(deserialize_with = "deserialize_token")]
     pub token: Option<Token>,
+    #[serde(rename = "Method")]
     pub method: String,
     pub params: Params,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Params, RelayerInput, Status, Timestamp, Transaction, Url};
+    use super::{Params, RelayerMessage, Status, Timestamp, Transaction, Url, SignatureVersion, TransactionError, EvmResult};
     use ethereum_types::Address;
     use http::{StatusCode, Uri};
     use std::time::Duration;
@@ -356,44 +460,52 @@ mod tests {
     fn test_deserialize() {
         let input = r#"
 {
-  "host": "westcoast002.relayers.aurora.dev",
-  "timestamp": 1642679283605128700,
+  "host": "eastcoast002.relayers.aurora.dev",
+  "timestamp": 1643055002125066200,
   "status": 200,
-  "client": "52.180.67.69",
-  "response_time": 6.146,
-  "hasError": false,
+  "client": "2001:41d0:401:3000::6131",
+  "response_time": 9.016,
+  "hasError": true,
   "hasToken": false,
-  "error": "",
+  "error": "ERR_INCORRECT_NONCE",
   "token": "",
-  "method": "eth_sendrawtransaction",
+  "Method": "eth_sendrawtransaction",
   "params": {
-    "from": "0xd85dea6093118b54318e10c6654a2b2e1a6b40c6",
-    "to": "0x73cd7b6b17836e4ed282e5b9e6e01fbfb966b442",
-    "eth_gas": 400000,
-    "eth_nonce": 23118,
+    "from": "0x432963a481e1aa7f09e9ea878d4a596eee6eb63b",
+    "sigversion": "London",
+    "aurora-result": "",
+    "near-gas-burned": 2428826553270,
+    "near-tx-id": "EhSE72mE1Bj2czjRFPbHpF6ZbN7WYpvW3RiJCqRQEpWi",
+    "to": "0xa3a1ef5ae6561572023363862e238afa84c72ef5",
+    "eth_gas": 196566,
+    "eth_nonce": 1109,
     "eth_value": "0",
-    "tx": "0xf9020c825a4e8083061a809473cd7b6b17836e4ed282e5b9e6e01fbfb966b44280b901a45b42abc9000000000000000000000000000000000000000000000000215c9f93ceee2b8d000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000004c42c30ac6cc15fac9bd938618bcaa1a1fae8501d180000042a99168543b200fcc4bdd27c33ec7daa6fcfd8532ddb524bf4038096120010aa6550b34b69531c9cc9bdeed33cd01541e1eed10f90519d2c06fe3feb1242a991685479899ea824dbfa94348467f64d5a457f75f8bc40495d33c65aba18a6550b35bc3364c2f4c612000000000000000000000000000000000000000000000000000000000000000424f6c59747e4aceb3dba365df77d68c2a3aa4fb126fc0000215c9f93ceee2b8d747f3861eb4b98e61682da7687aa140e373b698e26f200857276181c5c5d8f87d263fc38d75928c965ed3507ceb2ce60fce4001626f015c9f93cecf771290b6484b123875f0f36b966d0b6ca14b31121bd9676ad2ea5276181cd92ff99f1da46849c8a82c8a0e55e5767cc04c5fa7b26759c236c90be4125056aff5faeb00a0e3fc64a949e66a00b9f4c971ab138d624ae8691d40e6ad1fff3983ac6c6e6ad2dff7ac8d186a9b7"
+    "tx": "0xf9018c820455808302ffd694a3a1ef5ae6561572023363862e238afa84c72ef580b9012438ed173900000000000000000000000000000000000000000000000000000000064794160000000000000000000000000000000000000000000830038c7a58c18000000000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000432963a481e1aa7f09e9ea878d4a596eee6eb63b0000000000000000000000000000000000000000000000000000000061ef079a00000000000000000000000000000000000000000000000000000000000000030000000000000000000000004988a896b1227218e4a686fde5eabdcabd91571f000000000000000000000000fa94348467f64d5a457f75f8bc40495d33c65abb000000000000000000000000c42c30ac6cc15fac9bd938618bcaa1a1fae8501d849c8a82c7a0c2e6e27f406606698c5363b043e8d736e7a89f2fde612d473f41564262138aa6a03e00b96b99a2033ab8ef5f356b16514542eaa0de2e8356f0045a712ca3ec3501"
   }
 }
 "#;
-        let header: RelayerInput = serde_json::from_str(input).unwrap();
-        let tx_bytes = hex::decode("f9020c825a4e8083061a809473cd7b6b17836e4ed282e5b9e6e01fbfb966b44280b901a45b42abc9000000000000000000000000000000000000000000000000215c9f93ceee2b8d000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000004c42c30ac6cc15fac9bd938618bcaa1a1fae8501d180000042a99168543b200fcc4bdd27c33ec7daa6fcfd8532ddb524bf4038096120010aa6550b34b69531c9cc9bdeed33cd01541e1eed10f90519d2c06fe3feb1242a991685479899ea824dbfa94348467f64d5a457f75f8bc40495d33c65aba18a6550b35bc3364c2f4c612000000000000000000000000000000000000000000000000000000000000000424f6c59747e4aceb3dba365df77d68c2a3aa4fb126fc0000215c9f93ceee2b8d747f3861eb4b98e61682da7687aa140e373b698e26f200857276181c5c5d8f87d263fc38d75928c965ed3507ceb2ce60fce4001626f015c9f93cecf771290b6484b123875f0f36b966d0b6ca14b31121bd9676ad2ea5276181cd92ff99f1da46849c8a82c8a0e55e5767cc04c5fa7b26759c236c90be4125056aff5faeb00a0e3fc64a949e66a00b9f4c971ab138d624ae8691d40e6ad1fff3983ac6c6e6ad2dff7ac8d186a9b7").unwrap();
-        let from_address_bytes = hex::decode("d85dea6093118b54318e10c6654a2b2e1a6b40c6").unwrap();
-        let to_address_bytes = hex::decode("73cd7b6b17836e4ed282e5b9e6e01fbfb966b442").unwrap();
-        let expected = RelayerInput {
-            host: Url("westcoast002.relayers.aurora.dev".parse::<Uri>().unwrap()),
-            timestamp: Timestamp(Duration::from_millis(1642679283605128700)),
+        let header: RelayerMessage = serde_json::from_str(input).unwrap();
+        let tx_bytes = hex::decode("f9018c820455808302ffd694a3a1ef5ae6561572023363862e238afa84c72ef580b9012438ed173900000000000000000000000000000000000000000000000000000000064794160000000000000000000000000000000000000000000830038c7a58c18000000000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000432963a481e1aa7f09e9ea878d4a596eee6eb63b0000000000000000000000000000000000000000000000000000000061ef079a00000000000000000000000000000000000000000000000000000000000000030000000000000000000000004988a896b1227218e4a686fde5eabdcabd91571f000000000000000000000000fa94348467f64d5a457f75f8bc40495d33c65abb000000000000000000000000c42c30ac6cc15fac9bd938618bcaa1a1fae8501d849c8a82c7a0c2e6e27f406606698c5363b043e8d736e7a89f2fde612d473f41564262138aa6a03e00b96b99a2033ab8ef5f356b16514542eaa0de2e8356f0045a712ca3ec3501").unwrap();
+        let from_address_bytes = hex::decode("432963a481e1aa7f09e9ea878d4a596eee6eb63b").unwrap();
+        let to_address_bytes = hex::decode("a3a1ef5ae6561572023363862e238afa84c72ef5").unwrap();
+        let expected = RelayerMessage {
+            host: Url("eastcoast002.relayers.aurora.dev".parse::<Uri>().unwrap()),
+            timestamp: Timestamp(Duration::from_millis(1643055002125066200)),
             status: Status(StatusCode::OK),
-            client: "52.180.67.69".parse().unwrap(),
-            response_time: 6.146,
-            error: None,
+            client: "2001:41d0:401:3000::6131".parse().unwrap(),
+            response_time: 9.016,
+            error: Some(TransactionError::ErrIncorrectNonce),
             token: None,
             method: "eth_sendrawtransaction".to_string(),
             params: Params {
                 from: Address::from_slice(&from_address_bytes),
+                signature_version: SignatureVersion::Eip1559,
+                evm_result: None,
+                near_gas_burned: 2428826553270,
+                near_tx: "EhSE72mE1Bj2czjRFPbHpF6ZbN7WYpvW3RiJCqRQEpWi".to_string(),
                 to: Address::from_slice(&to_address_bytes),
-                eth_gas: 400000,
-                eth_nonce: 23118,
+                eth_gas: 196566,
+                eth_nonce: 1109,
                 eth_value: "0".to_string(),
                 tx: Transaction(tx_bytes),
             },

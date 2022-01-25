@@ -1,6 +1,6 @@
 use borealis_banhammer::{
     banhammer::{self, Banhammer},
-    de::RelayerInput,
+    de::RelayerMessage,
 };
 use std::{
     fs, io,
@@ -28,7 +28,7 @@ fn main() -> io::Result<()> {
         let stdin = io::stdin();
         stdin.read_line(&mut buffer)?;
 
-        let relayer_input: RelayerInput = match serde_json::from_str(&buffer) {
+        let relayer_input: RelayerMessage = match serde_json::from_str(&buffer) {
             Ok(r) => r,
             Err(_e) => {
                 // TODO relayer failed parses

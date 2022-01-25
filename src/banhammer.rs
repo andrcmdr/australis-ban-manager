@@ -1,4 +1,4 @@
-use crate::de::{RelayerInput, Token, TransactionError};
+use crate::de::{RelayerMessage, Token, TransactionError};
 use ethereum_types::Address;
 use serde::{
     de::{self, Error, Visitor},
@@ -380,7 +380,7 @@ impl Banhammer {
         }
     }
 
-    pub fn read_input(&mut self, input: &RelayerInput) {
+    pub fn read_input(&mut self, input: &RelayerMessage) {
         let maybe_error = input.error.as_ref();
         let user = User {
             client: input.client,
