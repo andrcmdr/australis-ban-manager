@@ -128,8 +128,8 @@ pub enum SignatureVersion {
 }
 
 fn deserialize_signature_version<'de, D>(deserializer: D) -> Result<SignatureVersion, D::Error>
-    where
-        D: Deserializer<'de>,
+where
+    D: Deserializer<'de>,
 {
     struct SignatureVersionVisitor;
 
@@ -141,13 +141,15 @@ fn deserialize_signature_version<'de, D>(deserializer: D) -> Result<SignatureVer
         }
 
         fn visit_str<E>(self, signature_version: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
+        where
+            E: de::Error,
         {
             match signature_version {
                 "Berlin" => Ok(SignatureVersion::Eip2930),
                 "London" => Ok(SignatureVersion::Eip1559),
-                _ => Err(de::Error::custom(format!("Unknown signature version: {signature_version}"))),
+                _ => Err(de::Error::custom(format!(
+                    "Unknown signature version: {signature_version}"
+                ))),
             }
         }
     }
@@ -188,16 +190,14 @@ where
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct Params {
     pub from: Address,
-    #[serde(rename = "sigversion")]
+    #[serde(rename = "sigver")]
     #[serde(deserialize_with = "deserialize_signature_version")]
     pub signature_version: SignatureVersion,
-    #[serde(rename = "aurora-result")]
     #[serde(deserialize_with = "deserialize_evm_result")]
+    #[serde(rename = "aurora_result")]
     pub evm_result: Option<EvmResult>,
-    #[serde(rename = "near-gas-burned")]
-    pub near_gas_burned: u128,
-    #[serde(rename = "near-tx-id")]
-    pub near_tx: String,
+    pub near_gas: u128,
+    // pub near_txid: String,
     pub to: Address,
     pub eth_gas: u32,
     pub eth_nonce: u32,
@@ -318,6 +318,7 @@ impl<'de> Deserialize<'de> for Url {
 pub enum TransactionError {
     ErrIncorrectNonce,
     MaxGas,
+    InvalidECDSA,
     Revert(String),
     Relayer(String),
 }
@@ -349,6 +350,7 @@ impl<'de> Deserialize<'de> for TransactionError {
                     "Exceeded the maximum amount of gas allowed to burn per contract." => {
                         TransactionError::MaxGas
                     }
+                    "ERR_INVALID_ECDSA_SIGNATURE" => TransactionError::InvalidECDSA,
                     _ => TransactionError::Revert(err.to_string()),
                 })
             }
@@ -444,14 +446,15 @@ pub struct RelayerMessage {
     pub error: Option<TransactionError>,
     #[serde(deserialize_with = "deserialize_token")]
     pub token: Option<Token>,
-    #[serde(rename = "Method")]
     pub method: String,
     pub params: Params,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Params, RelayerMessage, Status, Timestamp, Transaction, Url, SignatureVersion, TransactionError, EvmResult};
+    use super::{
+        EvmResult, Params, RelayerMessage, SignatureVersion, Status, Timestamp, Transaction, Url,
+    };
     use ethereum_types::Address;
     use http::{StatusCode, Uri};
     use std::time::Duration;
@@ -460,52 +463,55 @@ mod tests {
     fn test_deserialize() {
         let input = r#"
 {
-  "host": "eastcoast002.relayers.aurora.dev",
-  "timestamp": 1643055002125066200,
+  "host": "eastcoast004.relayers.aurora.dev",
+  "timestamp": 1643107080597690600,
   "status": 200,
-  "client": "2001:41d0:401:3000::6131",
-  "response_time": 9.016,
-  "hasError": true,
+  "client": "14.207.20.160",
+  "response_time": 6.544,
+  "hasError": false,
   "hasToken": false,
-  "error": "ERR_INCORRECT_NONCE",
+  "error": "",
   "token": "",
-  "Method": "eth_sendrawtransaction",
+  "method": "eth_sendrawtransaction",
   "params": {
-    "from": "0x432963a481e1aa7f09e9ea878d4a596eee6eb63b",
-    "sigversion": "London",
-    "aurora-result": "",
-    "near-gas-burned": 2428826553270,
-    "near-tx-id": "EhSE72mE1Bj2czjRFPbHpF6ZbN7WYpvW3RiJCqRQEpWi",
+    "from": "0x842c44019c1503ccc2059eb94fe2c6ab29cbdc84",
+    "sigver": "London",
+    "aurora_result": "0x950bc7a2f6b5f9a2f6e65af1302dc1dd85e47a402d36e9ffb057aabc49452085",
+    "near_gas": 0,
+    "near_txid": "",
     "to": "0xa3a1ef5ae6561572023363862e238afa84c72ef5",
-    "eth_gas": 196566,
-    "eth_nonce": 1109,
+    "eth_gas": 8066370,
+    "eth_nonce": 122,
     "eth_value": "0",
-    "tx": "0xf9018c820455808302ffd694a3a1ef5ae6561572023363862e238afa84c72ef580b9012438ed173900000000000000000000000000000000000000000000000000000000064794160000000000000000000000000000000000000000000830038c7a58c18000000000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000432963a481e1aa7f09e9ea878d4a596eee6eb63b0000000000000000000000000000000000000000000000000000000061ef079a00000000000000000000000000000000000000000000000000000000000000030000000000000000000000004988a896b1227218e4a686fde5eabdcabd91571f000000000000000000000000fa94348467f64d5a457f75f8bc40495d33c65abb000000000000000000000000c42c30ac6cc15fac9bd938618bcaa1a1fae8501d849c8a82c7a0c2e6e27f406606698c5363b043e8d736e7a89f2fde612d473f41564262138aa6a03e00b96b99a2033ab8ef5f356b16514542eaa0de2e8356f0045a712ca3ec3501"
+    "tx": "0xf9016a7a80837b154294a3a1ef5ae6561572023363862e238afa84c72ef580b90104e8e33700000000000000000000000000c42c30ac6cc15fac9bd938618bcaa1a1fae8501d000000000000000000000000b12bfca5a55806aaf64e99521918a4bf0fc4080200000000000000000000000000000000000000000040d2ecfdc54d25adc2fbda00000000000000000000000000000000000000000000000000000000319560b5000000000000000000000000000000000000000000407ff37c80798fbaf90c83000000000000000000000000000000000000000000000000000000003155e92e000000000000000000000000842c44019c1503ccc2059eb94fe2c6ab29cbdc840000000000000000000000000000000000000000000000000000000061efd9ee849c8a82c7a01b1ba49c628ed6b1d9a9d3cc2c3f708ec71ddb14ac0297b42a5ef32ba4f48cf4a03c3428f9f5681f36d743aa96144dd991f04ec41160f308eb4d0d528e2ee6616c"
   }
 }
-"#;
+        "#;
         let header: RelayerMessage = serde_json::from_str(input).unwrap();
-        let tx_bytes = hex::decode("f9018c820455808302ffd694a3a1ef5ae6561572023363862e238afa84c72ef580b9012438ed173900000000000000000000000000000000000000000000000000000000064794160000000000000000000000000000000000000000000830038c7a58c18000000000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000432963a481e1aa7f09e9ea878d4a596eee6eb63b0000000000000000000000000000000000000000000000000000000061ef079a00000000000000000000000000000000000000000000000000000000000000030000000000000000000000004988a896b1227218e4a686fde5eabdcabd91571f000000000000000000000000fa94348467f64d5a457f75f8bc40495d33c65abb000000000000000000000000c42c30ac6cc15fac9bd938618bcaa1a1fae8501d849c8a82c7a0c2e6e27f406606698c5363b043e8d736e7a89f2fde612d473f41564262138aa6a03e00b96b99a2033ab8ef5f356b16514542eaa0de2e8356f0045a712ca3ec3501").unwrap();
-        let from_address_bytes = hex::decode("432963a481e1aa7f09e9ea878d4a596eee6eb63b").unwrap();
+        let tx_bytes = hex::decode("f9016a7a80837b154294a3a1ef5ae6561572023363862e238afa84c72ef580b90104e8e33700000000000000000000000000c42c30ac6cc15fac9bd938618bcaa1a1fae8501d000000000000000000000000b12bfca5a55806aaf64e99521918a4bf0fc4080200000000000000000000000000000000000000000040d2ecfdc54d25adc2fbda00000000000000000000000000000000000000000000000000000000319560b5000000000000000000000000000000000000000000407ff37c80798fbaf90c83000000000000000000000000000000000000000000000000000000003155e92e000000000000000000000000842c44019c1503ccc2059eb94fe2c6ab29cbdc840000000000000000000000000000000000000000000000000000000061efd9ee849c8a82c7a01b1ba49c628ed6b1d9a9d3cc2c3f708ec71ddb14ac0297b42a5ef32ba4f48cf4a03c3428f9f5681f36d743aa96144dd991f04ec41160f308eb4d0d528e2ee6616c").unwrap();
+        let from_address_bytes = hex::decode("842c44019c1503ccc2059eb94fe2c6ab29cbdc84").unwrap();
         let to_address_bytes = hex::decode("a3a1ef5ae6561572023363862e238afa84c72ef5").unwrap();
+        let evm_result_bytes =
+            hex::decode("950bc7a2f6b5f9a2f6e65af1302dc1dd85e47a402d36e9ffb057aabc49452085")
+                .unwrap();
         let expected = RelayerMessage {
-            host: Url("eastcoast002.relayers.aurora.dev".parse::<Uri>().unwrap()),
-            timestamp: Timestamp(Duration::from_millis(1643055002125066200)),
+            host: Url("eastcoast004.relayers.aurora.dev".parse::<Uri>().unwrap()),
+            timestamp: Timestamp(Duration::from_millis(1643107080597690600)),
             status: Status(StatusCode::OK),
-            client: "2001:41d0:401:3000::6131".parse().unwrap(),
-            response_time: 9.016,
-            error: Some(TransactionError::ErrIncorrectNonce),
+            client: "14.207.20.160".parse().unwrap(),
+            response_time: 6.544,
+            error: None,
             token: None,
             method: "eth_sendrawtransaction".to_string(),
             params: Params {
                 from: Address::from_slice(&from_address_bytes),
                 signature_version: SignatureVersion::Eip1559,
-                evm_result: None,
-                near_gas_burned: 2428826553270,
-                near_tx: "EhSE72mE1Bj2czjRFPbHpF6ZbN7WYpvW3RiJCqRQEpWi".to_string(),
+                evm_result: Some(EvmResult(evm_result_bytes)),
+                near_gas: 0,
+                // near_txid: "EhSE72mE1Bj2czjRFPbHpF6ZbN7WYpvW3RiJCqRQEpWi".to_string(),
                 to: Address::from_slice(&to_address_bytes),
-                eth_gas: 196566,
-                eth_nonce: 1109,
+                eth_gas: 8066370,
+                eth_nonce: 122,
                 eth_value: "0".to_string(),
                 tx: Transaction(tx_bytes),
             },
