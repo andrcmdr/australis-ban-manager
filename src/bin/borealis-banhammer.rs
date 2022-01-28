@@ -4,9 +4,9 @@ use borealis_banhammer::{
 };
 use std::{
     fs, io,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
-use tracing::{debug, info};
+use tracing::{debug, info, error};
 
 fn main() -> io::Result<()> {
     tracing_subscriber::fmt::init();
@@ -18,10 +18,6 @@ fn main() -> io::Result<()> {
     let time = Instant::now();
     let mut next_save = Duration::from_secs(60);
 
-    info!(
-        "{:?}",
-        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
-    );
     info!("Starting banhammer...");
     loop {
         let mut buffer = String::new();
@@ -32,6 +28,7 @@ fn main() -> io::Result<()> {
             Ok(r) => r,
             Err(_e) => {
                 // TODO relayer failed parses
+                error!("failed to parse: {}", buffer);
                 continue;
             }
         };
