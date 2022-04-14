@@ -1,4 +1,5 @@
 use crate::de::{RelayerMessage, Token, TransactionError};
+use crate::stats::{Counter, Measure};
 use ethereum_types::Address;
 use serde::{
     de::{self, Error, Visitor},
@@ -396,6 +397,8 @@ impl Banhammer {
     ) -> (Option<BanReason>, Option<BanReason>, Option<BanReason>) {
         // TODO excessive gas
         let maybe_client_banned = if !self.ban_list.clients.contains_key(&user.client) {
+            Measure::inc(Counter::MessagesProcessed);
+
             let client_progress = &mut self
                 .user_clients
                 .get_mut(&user.client)
@@ -407,6 +410,8 @@ impl Banhammer {
         };
 
         let maybe_address_banned = if !self.ban_list.addresses.contains_key(&user.address) {
+            Measure::inc(Counter::MessagesProcessed);
+
             let address_progress = &mut self
                 .user_addresses
                 .get_mut(&user.address)
@@ -418,6 +423,8 @@ impl Banhammer {
         };
 
         let maybe_token_banned = {
+            Measure::inc(Counter::MessagesProcessed);
+
             if let Some(token) = token {
                 if !self.ban_list.tokens.contains_key(token) {
                     let token_progress = &mut self
@@ -544,12 +551,17 @@ impl Banhammer {
         }
 
         self.increment_transaction_count(&user);
+        Measure::inc(Counter::MessagesReceived);
 
         let (maybe_client_banned, maybe_address_banned, maybe_token_banned) =
             self.ban_progression(&user, user.token.as_ref(), maybe_error, 202651902028573); // TODO: add from relayer message when available
 
         if let Some(ban_reason) = maybe_client_banned {
             tracing::info!("BANNED client: {}, reason: {:?}", user.client, ban_reason);
+
+            Measure::inc(Counter::MessagesSent);
+            Measure::inc(Counter::BanReason(ban_reason.clone()));
+
             let mut user_client = self
                 .user_clients
                 .remove(&user.client)
@@ -563,6 +575,10 @@ impl Banhammer {
                 user.address,
                 ban_reason
             );
+
+            Measure::inc(Counter::MessagesSent);
+            Measure::inc(Counter::BanReason(ban_reason.clone()));
+
             let mut user_address = self
                 .user_addresses
                 .remove(&user.address)
@@ -573,6 +589,10 @@ impl Banhammer {
         if let Some(ban_reason) = maybe_token_banned {
             let token = user.token.expect("'Token' missing.");
             tracing::info!("BANNED token: {:?}, reason: {:?}", token, ban_reason);
+
+            Measure::inc(Counter::MessagesSent);
+            Measure::inc(Counter::BanReason(ban_reason.clone()));
+
             let mut user_token = self
                 .user_tokens
                 .remove(&token)
