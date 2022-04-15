@@ -397,8 +397,6 @@ impl Banhammer {
     ) -> (Option<BanReason>, Option<BanReason>, Option<BanReason>) {
         // TODO excessive gas
         let maybe_client_banned = if !self.ban_list.clients.contains_key(&user.client) {
-            Measure::inc(Counter::MessagesProcessed);
-
             let client_progress = &mut self
                 .user_clients
                 .get_mut(&user.client)
@@ -410,8 +408,6 @@ impl Banhammer {
         };
 
         let maybe_address_banned = if !self.ban_list.addresses.contains_key(&user.address) {
-            Measure::inc(Counter::MessagesProcessed);
-
             let address_progress = &mut self
                 .user_addresses
                 .get_mut(&user.address)
@@ -423,8 +419,6 @@ impl Banhammer {
         };
 
         let maybe_token_banned = {
-            Measure::inc(Counter::MessagesProcessed);
-
             if let Some(token) = token {
                 if !self.ban_list.tokens.contains_key(token) {
                     let token_progress = &mut self

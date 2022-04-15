@@ -1,12 +1,13 @@
 use borealis_banhammer::{
     banhammer::{self, Banhammer},
     de::RelayerMessage,
+    stats::{Counter, Measure},
 };
 use std::{
     fs, io,
     time::{Duration, Instant},
 };
-use tracing::{debug, info, error};
+use tracing::{debug, error, info};
 
 fn main() -> io::Result<()> {
     tracing_subscriber::fmt::init();
@@ -34,6 +35,7 @@ fn main() -> io::Result<()> {
         };
 
         ban_manager.read_input(&relayer_input);
+        Measure::inc(Counter::MessagesProcessed);
 
         ban_manager.tick(time);
 
