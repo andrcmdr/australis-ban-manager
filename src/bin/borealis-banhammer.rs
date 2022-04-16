@@ -17,7 +17,7 @@ use tokio::join;
 use tracing::{debug, error, info};
 
 async fn serve_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
-    let buffer = vec![];
+    let buffer = Measure::gather();
     let encoder = prometheus::TextEncoder::new();
     let response = Response::builder()
         .status(200)
