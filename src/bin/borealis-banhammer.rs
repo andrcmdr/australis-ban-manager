@@ -3,18 +3,45 @@ use borealis_banhammer::{
     de::RelayerMessage,
     stats::{Counter, Measure},
 };
+use hyper::{
+    header::CONTENT_TYPE,
+    service::{make_service_fn, service_fn},
+    Body, Request, Response, Server,
+};
+use prometheus::Encoder;
 use std::{
     fs, io,
     time::{Duration, Instant},
 };
+use tokio::join;
 use tracing::{debug, error, info};
 
-fn main() -> io::Result<()> {
-    tracing_subscriber::fmt::init();
+async fn serve_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+    let buffer = vec![];
+    let encoder = prometheus::TextEncoder::new();
+    let response = Response::builder()
+        .status(200)
+        .header(CONTENT_TYPE, encoder.format_type())
+        .body(Body::from(buffer))
+        .unwrap();
+    Ok(response)
+}
 
-    let raw_toml = fs::read_to_string("./Config.toml").expect("Missing Config.toml.");
-    let ban_manager_config: banhammer::Config =
-        toml::from_str(&raw_toml).expect("Failed to parse TOML.");
+async fn serve() {
+    // TODO: set ad config param
+    let addr = ([127, 0, 0, 1], 9898).into();
+    info!("Listening on http://{}", addr);
+
+    let serve_future = Server::bind(&addr).serve(make_service_fn(|_| async {
+        Ok::<_, hyper::Error>(service_fn(serve_req))
+    }));
+
+    if let Err(err) = serve_future.await {
+        error!("server error: {}", err);
+    }
+}
+
+async fn process(ban_manager_config: banhammer::Config) {
     let mut ban_manager = Banhammer::new(ban_manager_config);
     let time = Instant::now();
     let mut next_save = Duration::from_secs(60);
@@ -23,7 +50,7 @@ fn main() -> io::Result<()> {
     loop {
         let mut buffer = String::new();
         let stdin = io::stdin();
-        stdin.read_line(&mut buffer)?;
+        stdin.read_line(&mut buffer).expect("failed read input");
 
         let relayer_input: RelayerMessage = match serde_json::from_str(&buffer) {
             Ok(r) => r,
@@ -72,6 +99,19 @@ fn main() -> io::Result<()> {
             break;
         }
     }
+}
 
-    Ok(())
+async fn handle(ban_manager_config: banhammer::Config) {
+    join!(serve(), process(ban_manager_config));
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    let raw_toml = fs::read_to_string("./Config.toml").expect("Missing Config.toml.");
+    let ban_manager_config: banhammer::Config =
+        toml::from_str(&raw_toml).expect("Failed to parse TOML.");
+
+    handle(ban_manager_config).await;
 }

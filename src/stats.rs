@@ -55,9 +55,4 @@ impl Measure {
 
         buffer
     }
-
-    /// Push result data
-    pub fn push() {
-        todo!("Should be specific requirements")
-    }
 }
