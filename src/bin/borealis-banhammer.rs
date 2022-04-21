@@ -61,7 +61,13 @@ async fn process(ban_manager_config: banhammer::Config) {
             }
         };
 
-        ban_manager.read_input(&relayer_input);
+        let ban_reasons = ban_manager.read_input(&relayer_input);
+        Measure::inc(Counter::MessagesReceived);
+        for ban_reason in ban_reasons {
+            Measure::inc(Counter::MessagesSent);
+            Measure::inc(Counter::BanReason(ban_reason.clone()));
+        }
+
         Measure::inc(Counter::MessagesProcessed);
 
         ban_manager.tick(time);
