@@ -529,7 +529,8 @@ impl Banhammer {
         }
     }
 
-    pub fn read_input(&mut self, input: &RelayerMessage) {
+    pub fn read_input(&mut self, input: &RelayerMessage) -> Vec<BanReason> {
+        let mut ban_reasons = vec![];
         let maybe_error = input.error.as_ref();
         let user = UserDetails {
             client: input.client,
@@ -550,6 +551,8 @@ impl Banhammer {
 
         if let Some(ban_reason) = maybe_client_banned {
             tracing::info!("BANNED client: {}, reason: {:?}", user.client, ban_reason);
+            ban_reasons.push(ban_reason.clone());
+
             let mut user_client = self
                 .user_clients
                 .remove(&user.client)
@@ -563,6 +566,8 @@ impl Banhammer {
                 user.address,
                 ban_reason
             );
+            ban_reasons.push(ban_reason.clone());
+
             let mut user_address = self
                 .user_addresses
                 .remove(&user.address)
@@ -573,6 +578,8 @@ impl Banhammer {
         if let Some(ban_reason) = maybe_token_banned {
             let token = user.token.expect("'Token' missing.");
             tracing::info!("BANNED token: {:?}, reason: {:?}", token, ban_reason);
+            ban_reasons.push(ban_reason.clone());
+
             let mut user_token = self
                 .user_tokens
                 .remove(&token)
@@ -580,6 +587,8 @@ impl Banhammer {
             user_token.banned = Some(ban_reason);
             self.ban_list.tokens.insert(token, user_token);
         }
+
+        ban_reasons
     }
 
     pub fn user_clients(&self) -> &HashMap<IpAddr, UserClient> {
