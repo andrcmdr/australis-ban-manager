@@ -254,12 +254,12 @@ struct UserDetails {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(deserialize_with = "deserialize_duration")]
-    timeframe: Duration,
-    incorrect_nonce_threshold: u32,
-    max_gas_threshold: u32,
-    revert_threshold: u32,
-    excessive_gas_threshold: u32,
-    token_multiplier: u32,
+    pub timeframe: Duration,
+    pub incorrect_nonce_threshold: u32,
+    pub max_gas_threshold: u32,
+    pub revert_threshold: u32,
+    pub excessive_gas_threshold: u32,
+    pub token_multiplier: u32,
 }
 
 #[derive(Debug, Serialize)]
