@@ -1,4 +1,4 @@
 pub mod banhammer;
+pub mod buckets;
 pub mod de;
-mod buckets;
 pub mod stats;

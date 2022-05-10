@@ -1,5 +1,27 @@
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use crate::de::Token;
+use ethereum_types::Address;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, net::IpAddr};
+
+#[derive(Debug, Hash, Clone)]
+pub enum BucketKind {
+    IP,
+    Address,
+    Token,
+}
+
+#[derive(Debug, Hash, Clone)]
+pub enum BucketValue {
+    IP(IpAddr),
+    Address(Address),
+    Token(Token),
+}
+
+#[derive(Debug, Hash, Clone)]
+pub struct BucketName {
+    kind: BucketKind,
+    value: BucketValue,
+}
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct BucketConfig {
@@ -8,14 +30,14 @@ pub struct BucketConfig {
     pub overflow_size: u64,
     pub retention: u64,
 }
-
+/*
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NamedBucketConfig {
     pub name: String,
     pub base_size: u64,
     pub leak_rate: u64,
     pub overflow_size: u64,
-    pub retention: u64, 
+    pub retention: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -66,7 +88,10 @@ pub struct Buckets(Vec<BucketKind>);
 impl Buckets {
     pub fn new(config: BucketsConfig) -> Self {
         let buckets: Vec<BucketKind> = {
-            let capacity = 6 + config.relayer_errors.len() + config.engine_errors.len() + config.evm_reverts.len();
+            let capacity = 6
+                + config.relayer_errors.len()
+                + config.engine_errors.len()
+                + config.evm_reverts.len();
             Vec::with_capacity(capacity)
         };
         Buckets(buckets)
@@ -91,7 +116,7 @@ mod tests {
             base_size: 0,
             leak_rate: 0,
             overflow_size: 0,
-            retention: 0
+            retention: 0,
         };
         map.insert("EXAMPLE_ERROR".to_string(), bucket);
         let buckets_config = BucketsConfig {
@@ -101,19 +126,19 @@ mod tests {
                 base_size: 0,
                 leak_rate: 0,
                 overflow_size: 0,
-                retention: 0
+                retention: 0,
             },
             default_engine_error: BucketConfig {
                 base_size: 0,
                 leak_rate: 0,
                 overflow_size: 0,
-                retention: 0
+                retention: 0,
             },
             default_evm_revert: BucketConfig {
                 base_size: 0,
                 leak_rate: 0,
                 overflow_size: 0,
-                retention: 0
+                retention: 0,
             },
             relayer_errors: vec![named_bucket.clone(), named_bucket.clone()],
             engine_errors: vec![named_bucket.clone(), named_bucket.clone()],
@@ -127,3 +152,4 @@ mod tests {
         // println!("{}", json);
     }
 }
+*/
