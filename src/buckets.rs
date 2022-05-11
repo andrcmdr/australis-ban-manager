@@ -3,25 +3,37 @@ use ethereum_types::Address;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::IpAddr};
 
-#[derive(Debug, Hash, Clone)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq)]
 pub enum BucketKind {
     IP,
     Address,
     Token,
 }
 
-#[derive(Debug, Hash, Clone)]
-pub enum BucketValue {
+#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+pub enum BucketNameValue {
     IP(IpAddr),
     Address(Address),
     Token(Token),
 }
 
-#[derive(Debug, Hash, Clone)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+pub enum BucketErrorKind {
+    IncorrectNonce,
+    MaxGas,
+    Reverts,
+    UsedExcessiveGas,
+    Custom(String),
+}
+
+#[derive(Debug, Hash, Clone, Eq, PartialEq)]
 pub struct BucketName {
     kind: BucketKind,
-    value: BucketValue,
+    value: BucketNameValue,
+    error: BucketErrorKind,
 }
+
+pub struct LeakyBucket(HashMap<BucketName, u64>);
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct BucketConfig {
@@ -30,6 +42,7 @@ pub struct BucketConfig {
     pub overflow_size: u64,
     pub retention: u64,
 }
+
 /*
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NamedBucketConfig {
