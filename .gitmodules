@@ -1,0 +1,4 @@
+[submodule "NATS"]
+	path = .nats/seed/nats-deployment
+	url = git@github.com:aurora-is-near/nats-validator.git
+	branch = aurora-deploy

@@ -1,5 +1,27 @@
-/target
-.DS_Store
-.idea
+# Rust artifacts
+target/
+
+# Borealis Banhammer data
+.borealis-banhammer/data/
+data/
+log/
 *.json
-nats.creds
+
+# NATS Creds
+borealis*.creds
+nats-ext.creds
+
+# Visual Studio Code
+.vscode/
+.run/
+
+# JetBrains IDEs
+.idea/
+.run/
+
+# Editor backup files
+*~
+
+# macOS
+.DS_Store
+

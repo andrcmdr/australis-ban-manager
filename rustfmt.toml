@@ -1,4 +1,8 @@
-imports_granularity = "Crate"
-use_field_init_shorthand = true
-reorder_imports = true
-reorder_modules = true
+# use_small_heuristics = "Max"
+# reorder_imports = true
+# reorder_modules = true
+edition = "2021"
+# This option will merge imports, however it's only available in +nightly.
+# imports_granularity = "Module"
+# fn_args_density = "Compressed"
+# overflow_delimited_expr = "true"

@@ -1,0 +1,37 @@
+[package]
+name = "borealis-banhammer"
+version = "0.1.0"
+authors = ["Aurora <hello@aurora.dev>"]
+edition = "2021"
+# rust-version = "1.60.0"
+description = "Borealis Banhammer is the ban management daemon for misbehaving unfair users. It's an events listener for Aurora's transactions' events (sourced from nginx based relayer interceptor and published to the Borealis NATS Bus). Provides publishing (as producer) of messages about banning events with streaming messages to the Borealis Bus, NATS based service-oriented bus (MOM/MQ), for other security/policy services (as consumers/subscribers)."
+homepage = "https://github.com/aurora-is-near/borealis-banhammer"
+repository = "https://github.com/aurora-is-near/borealis-banhammer"
+license-file = "LICENSE"
+publish = false
+
+[dependencies]
+nats = "0.20.0"
+
+clap = { version = "3.1.15", features = ["derive"] }
+openssl-probe = "0.1.2"
+
+actix = "0.13.0"
+tokio = { version = "1.18.0", features = ["sync", "rt-multi-thread"] }
+
+tracing = "0.1.13"
+tracing-subscriber = "0.2.4"
+
+serde = { version = "1", features = [ "derive" ] }
+serde_json = "1.0.55"
+serde_cbor = "0.11.2"
+
+rand = "0.8.4"
+
+[dev-dependencies]
+
+[build-dependencies]
+
+[target]
+
+[features]

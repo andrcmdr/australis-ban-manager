@@ -1,14 +1,13 @@
-- Track successful transactions, will help with decision if the rules are
-imbalanced.
+- Track successful transactions, will help with decision if the rules are imbalanced.
 - Implement gas increment when the fields are added to the relayer.
 - Tests
-- Refactor everything
+- Refactoring (in progress)
 - Load data, if it exists
 - Parallelization
 - Unix timestamp when banned and updated
 - how much gas banned users used
 - Our gas burn daily
-- Store data in a DB on disk
+- Store data in a DB on disk (using Sled, https://docs.rs/sled/)
     - Temp hold in mem or X time, reduce amount of reads on disk
 - Unban user logic
 - Add check of % of transaction are successful or not. If 20% fail, ban. Add % to config.
