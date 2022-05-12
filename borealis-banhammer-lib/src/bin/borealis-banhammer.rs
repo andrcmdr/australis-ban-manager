@@ -1,4 +1,4 @@
-use borealis_banhammer::{
+use borealis_banhammer_lib::{
     banhammer::{self, Banhammer},
     de::RelayerMessage,
     stats::{Counter, Measure},

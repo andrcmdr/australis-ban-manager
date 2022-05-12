@@ -1,7 +1,7 @@
 use actix;
 use borealis_types::types::BorealisMessage;
 use clap::Parser;
-use configs::{
+use cli::{
     init_logging, AwaitSynced, Error, MsgFormat, Opts, RunArgs, SubCommand, SyncMode,
     VerbosityLevel, CompressionMode,
 };
@@ -15,7 +15,7 @@ use tokio::signal::{ctrl_c, unix::{signal, SignalKind}};
 use tokio::sync::{mpsc, watch};
 use tracing:: {info, error, debug};
 
-pub mod configs;
+pub mod cli;
 
 static SIGNAL: AtomicUsize = AtomicUsize::new(0);
 
