@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::IpAddr};
 
 #[derive(Debug, Hash, Clone, Eq, PartialEq)]
-pub enum BucketKind {
+pub enum BucketIdentity {
     IP,
     Address,
     Token,
@@ -28,7 +28,7 @@ pub enum BucketErrorKind {
 
 #[derive(Debug, Hash, Clone, Eq, PartialEq)]
 pub struct BucketName {
-    kind: BucketKind,
+    kind: BucketIdentity,
     value: BucketNameValue,
     error: BucketErrorKind,
 }
@@ -52,8 +52,36 @@ pub struct BucketConfig {
     pub retention: u64,
 }
 
+impl LeakyBucket {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn fill(&mut self, key: BucketName, value: BucketValue) -> BucketValue {
+        let value = self.0.entry(key.clone()).or_insert(value);
+        match key.error {
+            BucketErrorKind::IncorrectNonce => {
+                if let BucketValue::IncorrectNonce(val) = value.clone() {
+                    BucketValue::IncorrectNonce(val + 1)
+                } else {
+                    todo!("Add error handling");
+                }
+            }
+            BucketErrorKind::MaxGas => {
+                if let BucketValue::MaxGas(val) = value.clone() {
+                    BucketValue::MaxGas(val + 1)
+                } else {
+                    todo!("Add error handling");
+                }
+            }
+            _ => value.clone(),
+        }
+    }
+}
+
 /*
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive
+(Debug, Serialize, Deserialize, Clone)]
 pub struct NamedBucketConfig {
     pub name: String,
     pub base_size: u64,
