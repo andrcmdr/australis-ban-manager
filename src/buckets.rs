@@ -33,7 +33,16 @@ pub struct BucketName {
     error: BucketErrorKind,
 }
 
-pub struct LeakyBucket(HashMap<BucketName, u64>);
+#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+pub enum BucketValue {
+    IncorrectNonce(u32),
+    MaxGas(u32),
+    Reverts(u32),
+    UsedExcessiveGas(u128),
+    Custom(u32),
+}
+
+pub struct LeakyBucket(HashMap<BucketName, BucketValue>);
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct BucketConfig {
