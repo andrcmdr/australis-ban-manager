@@ -74,7 +74,21 @@ impl LeakyBucket {
                     todo!("Add error handling");
                 }
             }
-            _ => value.clone(),
+            BucketErrorKind::UsedExcessiveGas => {
+                if let BucketValue::UsedExcessiveGas(val) = value.clone() {
+                    BucketValue::UsedExcessiveGas(val + 1)
+                } else {
+                    todo!("Add error handling");
+                }
+            }
+            BucketErrorKind::Reverts => {
+                if let BucketValue::Reverts(val) = value.clone() {
+                    BucketValue::Reverts(val + 1)
+                } else {
+                    todo!("Add error handling");
+                }
+            }
+            _ => todo!("Add case fot custom error"),
         }
     }
 }
