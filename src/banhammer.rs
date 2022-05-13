@@ -378,12 +378,14 @@ impl Banhammer {
         }
     }
 
+    /// Process bucket live cycle    
     fn process_bucket(
         &mut self,
         bucket_identity: BucketIdentity,
         bucket_value: BucketNameValue,
         maybe_error: Option<&TransactionError>,
         near_gas: u128,
+        token_exist: bool,
     ) {
         let bucket_excessive_gas = BucketName::new(
             bucket_identity.clone(),
@@ -391,15 +393,24 @@ impl Banhammer {
             BucketErrorKind::UsedExcessiveGas,
         );
         let _x = self.leaky_buckets.get_fill(
-            bucket_excessive_gas,
+            &bucket_excessive_gas,
             BucketValue::UsedExcessiveGas(near_gas),
         );
 
+        // if no errors - just return
         if maybe_error.is_none() {
             return;
         }
         match maybe_error.unwrap() {
             TransactionError::ErrIncorrectNonce => {
+                let threshold = {
+                    if token_exist {
+                        self.config.incorrect_nonce_threshold * self.config.token_multiplier
+                    } else {
+                        self.config.incorrect_nonce_threshold
+                    }
+                };
+
                 let bucket_incorrect_nonce = BucketName::new(
                     bucket_identity,
                     bucket_value,
@@ -407,7 +418,7 @@ impl Banhammer {
                 );
                 let _x = self
                     .leaky_buckets
-                    .get_fill(bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
+                    .get_fill(&bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
             }
             TransactionError::InvalidECDSA => {
                 let bucket_incorrect_nonce = BucketName::new(
@@ -417,21 +428,41 @@ impl Banhammer {
                 );
                 let _x = self
                     .leaky_buckets
-                    .get_fill(bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
+                    .get_fill(&bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
             }
             TransactionError::MaxGas => {
+                let threshold = {
+                    if token_exist {
+                        self.config.max_gas_threshold * self.config.token_multiplier
+                    } else {
+                        self.config.max_gas_threshold
+                    }
+                };
                 let bucket_max_gas =
                     BucketName::new(bucket_identity, bucket_value, BucketErrorKind::MaxGas);
                 let _x = self
                     .leaky_buckets
-                    .get_fill(bucket_max_gas, BucketValue::MaxGas(1));
+                    .get_fill(&bucket_max_gas, BucketValue::MaxGas(1));
             }
             TransactionError::Revert(_) => {
+                let threshold = {
+                    if token_exist {
+                        self.config.revert_threshold * self.config.token_multiplier
+                    } else {
+                        self.config.revert_threshold
+                    }
+                };
                 let bucket_reverts =
                     BucketName::new(bucket_identity, bucket_value, BucketErrorKind::Reverts);
-                let _x = self
+                let fill_result = self
                     .leaky_buckets
-                    .get_fill(bucket_reverts, BucketValue::Reverts(1));
+                    .get_fill(&bucket_reverts, BucketValue::Reverts(1));
+                if fill_result > BucketValue::Reverts(threshold) {
+                    self.leaky_buckets.decrease(bucket_reverts, fill_result)
+                } else {
+                    self.leaky_buckets
+                        .fill(bucket_reverts, BucketValue::Reverts(1))
+                }
             }
             TransactionError::Relayer(_) => (),
         }
@@ -608,17 +639,20 @@ impl Banhammer {
         if let Some(token) = user.token.clone() {
             self.associate_with_user_token(token, user.client, user.address);
         }
+        let token_exist = user.token.clone().is_some();
         self.process_bucket(
             BucketIdentity::IP,
             BucketNameValue::IP(input.client),
             maybe_error,
             NEAR_GAS_COUNTER,
+            token_exist,
         );
         self.process_bucket(
             BucketIdentity::Address,
             BucketNameValue::Address(input.params.from),
             maybe_error,
             NEAR_GAS_COUNTER,
+            token_exist,
         );
         if let Some(token) = input.token.clone() {
             self.process_bucket(
@@ -626,6 +660,7 @@ impl Banhammer {
                 BucketNameValue::Token(token),
                 maybe_error,
                 NEAR_GAS_COUNTER,
+                token_exist,
             );
         }
 

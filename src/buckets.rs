@@ -40,7 +40,7 @@ impl BucketName {
     }
 }
 
-#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum BucketValue {
     IncorrectNonce(u32),
     MaxGas(u32),
@@ -141,7 +141,7 @@ impl LeakyBucket {
     }
 
     /// Calculate new fill value
-    pub fn get_fill(&self, key: BucketName, value: BucketValue) -> BucketValue {
+    pub fn get_fill(&self, key: &BucketName, value: BucketValue) -> BucketValue {
         let old_value = if let Some(val) = self.0.get(&key) {
             val
         } else {
