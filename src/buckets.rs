@@ -34,6 +34,12 @@ pub struct BucketName {
     error: BucketErrorKind,
 }
 
+impl BucketName {
+    pub fn new(kind: BucketIdentity, value: BucketNameValue, error: BucketErrorKind) -> Self {
+        Self { kind, value, error }
+    }
+}
+
 #[derive(Debug, Hash, Clone, Eq, PartialEq)]
 pub enum BucketValue {
     IncorrectNonce(u32),

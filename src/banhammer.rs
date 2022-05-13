@@ -1,4 +1,6 @@
-use crate::buckets::LeakyBucket;
+use crate::buckets::{
+    BucketErrorKind, BucketIdentity, BucketName, BucketNameValue, BucketValue, LeakyBucket,
+};
 use crate::de::{RelayerMessage, Token, TransactionError};
 use ethereum_types::Address;
 use serde::{
@@ -11,6 +13,8 @@ use std::{
     net::IpAddr,
     time::{Duration, Instant, SystemTime},
 };
+
+const NEAR_GAS_COUNTER: u128 = 202651902028573;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct BanProgress {
@@ -374,6 +378,65 @@ impl Banhammer {
         }
     }
 
+    fn process_bucket(
+        &mut self,
+        bucket_identity: BucketIdentity,
+        bucket_value: BucketNameValue,
+        maybe_error: Option<&TransactionError>,
+        near_gas: u128,
+    ) {
+        let bucket_excessive_gas = BucketName::new(
+            bucket_identity.clone(),
+            bucket_value.clone(),
+            BucketErrorKind::UsedExcessiveGas,
+        );
+        let _x = self.leaky_buckets.get_fill(
+            bucket_excessive_gas,
+            BucketValue::UsedExcessiveGas(near_gas),
+        );
+
+        if maybe_error.is_none() {
+            return;
+        }
+        match maybe_error.unwrap() {
+            TransactionError::ErrIncorrectNonce => {
+                let bucket_incorrect_nonce = BucketName::new(
+                    bucket_identity,
+                    bucket_value,
+                    BucketErrorKind::IncorrectNonce,
+                );
+                let _x = self
+                    .leaky_buckets
+                    .get_fill(bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
+            }
+            TransactionError::InvalidECDSA => {
+                let bucket_incorrect_nonce = BucketName::new(
+                    bucket_identity,
+                    bucket_value,
+                    BucketErrorKind::IncorrectNonce,
+                );
+                let _x = self
+                    .leaky_buckets
+                    .get_fill(bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
+            }
+            TransactionError::MaxGas => {
+                let bucket_max_gas =
+                    BucketName::new(bucket_identity, bucket_value, BucketErrorKind::MaxGas);
+                let _x = self
+                    .leaky_buckets
+                    .get_fill(bucket_max_gas, BucketValue::MaxGas(1));
+            }
+            TransactionError::Revert(_) => {
+                let bucket_reverts =
+                    BucketName::new(bucket_identity, bucket_value, BucketErrorKind::Reverts);
+                let _x = self
+                    .leaky_buckets
+                    .get_fill(bucket_reverts, BucketValue::Reverts(1));
+            }
+            TransactionError::Relayer(_) => (),
+        }
+    }
+
     pub fn tick(&mut self, time: Instant) {
         if time.elapsed() > self.next_check {
             for (_, client) in self.user_clients.iter_mut() {
@@ -545,11 +608,31 @@ impl Banhammer {
         if let Some(token) = user.token.clone() {
             self.associate_with_user_token(token, user.client, user.address);
         }
+        self.process_bucket(
+            BucketIdentity::IP,
+            BucketNameValue::IP(input.client),
+            maybe_error,
+            NEAR_GAS_COUNTER,
+        );
+        self.process_bucket(
+            BucketIdentity::Address,
+            BucketNameValue::Address(input.params.from),
+            maybe_error,
+            NEAR_GAS_COUNTER,
+        );
+        if let Some(token) = input.token.clone() {
+            self.process_bucket(
+                BucketIdentity::Token,
+                BucketNameValue::Token(token),
+                maybe_error,
+                NEAR_GAS_COUNTER,
+            );
+        }
 
         self.increment_transaction_count(&user);
 
         let (maybe_client_banned, maybe_address_banned, maybe_token_banned) =
-            self.ban_progression(&user, user.token.as_ref(), maybe_error, 202651902028573); // TODO: add from relayer message when available
+            self.ban_progression(&user, user.token.as_ref(), maybe_error, NEAR_GAS_COUNTER); // TODO: add from relayer message when available
 
         if let Some(ban_reason) = maybe_client_banned {
             tracing::info!("BANNED client: {}, reason: {:?}", user.client, ban_reason);
