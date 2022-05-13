@@ -1,6 +1,7 @@
 use crate::de::Token;
 use ethereum_types::Address;
 use serde::{Deserialize, Serialize};
+use std::ops::Add;
 use std::{collections::HashMap, net::IpAddr};
 
 #[derive(Debug, Hash, Clone, Eq, PartialEq)]
@@ -52,44 +53,92 @@ pub struct BucketConfig {
     pub retention: u64,
 }
 
+impl Add for BucketValue {
+    type Output = Self;
+
+    fn add(self, value: Self) -> Self::Output {
+        match self {
+            BucketValue::IncorrectNonce(val_l) => {
+                if let BucketValue::IncorrectNonce(val_r) = value.clone() {
+                    BucketValue::IncorrectNonce(val_l + val_r)
+                } else {
+                    unimplemented!()
+                }
+            }
+            BucketValue::MaxGas(val_l) => {
+                if let BucketValue::MaxGas(val_r) = value.clone() {
+                    BucketValue::MaxGas(val_l + val_r)
+                } else {
+                    unimplemented!()
+                }
+            }
+            BucketValue::UsedExcessiveGas(val_l) => {
+                if let BucketValue::UsedExcessiveGas(val_r) = value.clone() {
+                    BucketValue::UsedExcessiveGas(val_l + val_r)
+                } else {
+                    unimplemented!()
+                }
+            }
+            BucketValue::Reverts(val_l) => {
+                if let BucketValue::Reverts(val_r) = value.clone() {
+                    BucketValue::Reverts(val_l + val_r)
+                } else {
+                    unimplemented!()
+                }
+            }
+            _ => todo!("Add case fot custom error"),
+        }
+    }
+}
+
 impl LeakyBucket {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
-    pub fn fill(&mut self, key: BucketName, value: BucketValue) -> BucketValue {
-        let value = self.0.entry(key.clone()).or_insert(value);
+    /// Calculate new fill value
+    pub fn get_fill(&self, key: BucketName, value: BucketValue) -> BucketValue {
+        let old_value = if let Some(val) = self.0.get(&key) {
+            val
+        } else {
+            return value;
+        };
         match key.error {
             BucketErrorKind::IncorrectNonce => {
-                if let BucketValue::IncorrectNonce(val) = value.clone() {
-                    BucketValue::IncorrectNonce(val + 1)
+                if let BucketValue::IncorrectNonce(_) = value.clone() {
+                    old_value.clone() + value
                 } else {
                     todo!("Add error handling");
                 }
             }
             BucketErrorKind::MaxGas => {
-                if let BucketValue::MaxGas(val) = value.clone() {
-                    BucketValue::MaxGas(val + 1)
+                if let BucketValue::MaxGas(_) = value.clone() {
+                    old_value.clone() + value
                 } else {
                     todo!("Add error handling");
                 }
             }
             BucketErrorKind::UsedExcessiveGas => {
-                if let BucketValue::UsedExcessiveGas(val) = value.clone() {
-                    BucketValue::UsedExcessiveGas(val + 1)
+                if let BucketValue::UsedExcessiveGas(_) = value.clone() {
+                    old_value.clone() + value
                 } else {
                     todo!("Add error handling");
                 }
             }
             BucketErrorKind::Reverts => {
-                if let BucketValue::Reverts(val) = value.clone() {
-                    BucketValue::Reverts(val + 1)
+                if let BucketValue::Reverts(_) = value.clone() {
+                    old_value.clone() + value
                 } else {
                     todo!("Add error handling");
                 }
             }
             _ => todo!("Add case fot custom error"),
         }
+    }
+
+    /// Update fill
+    pub fn fill(&mut self, key: BucketName, value: BucketValue) {
+        *self.0.entry(key.clone()).or_insert(value.clone()) = value.clone();
     }
 }
 
