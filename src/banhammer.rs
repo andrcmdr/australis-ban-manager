@@ -1,3 +1,4 @@
+use crate::buckets::LeakyBucket;
 use crate::de::{RelayerMessage, Token, TransactionError};
 use ethereum_types::Address;
 use serde::{
@@ -262,7 +263,6 @@ pub struct Config {
     pub token_multiplier: u32,
 }
 
-#[derive(Debug, Serialize)]
 pub struct Banhammer {
     next_check: Duration,
     user_clients: HashMap<IpAddr, UserClient>,
@@ -270,6 +270,7 @@ pub struct Banhammer {
     user_tokens: HashMap<Token, UserToken>,
     ban_list: BanList,
     config: Config,
+    leaky_buckets: LeakyBucket,
 }
 
 fn check_ban(
@@ -369,6 +370,7 @@ impl Banhammer {
             user_tokens: HashMap::default(),
             ban_list: BanList::default(),
             config,
+            leaky_buckets: LeakyBucket::new(),
         }
     }
 
