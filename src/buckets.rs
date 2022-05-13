@@ -1,7 +1,7 @@
 use crate::de::Token;
 use ethereum_types::Address;
 use serde::{Deserialize, Serialize};
-use std::ops::Add;
+use std::ops::{Add, Sub};
 use std::{collections::HashMap, net::IpAddr};
 
 #[derive(Debug, Hash, Clone, Eq, PartialEq)]
@@ -91,6 +91,44 @@ impl Add for BucketValue {
     }
 }
 
+impl Sub for BucketValue {
+    type Output = Self;
+
+    fn sub(self, value: Self) -> Self::Output {
+        match self {
+            BucketValue::IncorrectNonce(val_l) => {
+                if let BucketValue::IncorrectNonce(val_r) = value.clone() {
+                    BucketValue::IncorrectNonce(val_l - val_r)
+                } else {
+                    unimplemented!()
+                }
+            }
+            BucketValue::MaxGas(val_l) => {
+                if let BucketValue::MaxGas(val_r) = value.clone() {
+                    BucketValue::MaxGas(val_l - val_r)
+                } else {
+                    unimplemented!()
+                }
+            }
+            BucketValue::UsedExcessiveGas(val_l) => {
+                if let BucketValue::UsedExcessiveGas(val_r) = value.clone() {
+                    BucketValue::UsedExcessiveGas(val_l - val_r)
+                } else {
+                    unimplemented!()
+                }
+            }
+            BucketValue::Reverts(val_l) => {
+                if let BucketValue::Reverts(val_r) = value.clone() {
+                    BucketValue::Reverts(val_l - val_r)
+                } else {
+                    unimplemented!()
+                }
+            }
+            _ => todo!("Add case fot custom error"),
+        }
+    }
+}
+
 impl LeakyBucket {
     pub fn new() -> Self {
         Self(HashMap::new())
@@ -139,6 +177,52 @@ impl LeakyBucket {
     /// Update fill
     pub fn fill(&mut self, key: BucketName, value: BucketValue) {
         *self.0.entry(key.clone()).or_insert(value.clone()) = value.clone();
+    }
+
+    /// Decrease bucket value
+    pub fn decrease(&mut self, key: BucketName, value: BucketValue) {
+        let old_value = if let Some(val) = self.0.get(&key) {
+            val
+        } else {
+            return;
+        };
+        let new_value = match key.error {
+            BucketErrorKind::IncorrectNonce => {
+                if let BucketValue::IncorrectNonce(_) = value.clone() {
+                    old_value.clone() - value
+                } else {
+                    todo!("Add error handling");
+                }
+            }
+            BucketErrorKind::MaxGas => {
+                if let BucketValue::MaxGas(_) = value.clone() {
+                    old_value.clone() - value
+                } else {
+                    todo!("Add error handling");
+                }
+            }
+            BucketErrorKind::UsedExcessiveGas => {
+                if let BucketValue::UsedExcessiveGas(_) = value.clone() {
+                    old_value.clone() - value
+                } else {
+                    todo!("Add error handling");
+                }
+            }
+            BucketErrorKind::Reverts => {
+                if let BucketValue::Reverts(_) = value.clone() {
+                    old_value.clone() - value
+                } else {
+                    todo!("Add error handling");
+                }
+            }
+            _ => todo!("Add case fot custom error"),
+        };
+        *self.0.entry(key.clone()).or_insert(new_value.clone()) = new_value.clone();
+    }
+
+    /// Leaky bucket
+    pub fn leaky(&mut self, key: BucketName, value: BucketValue) {
+        self.decrease(key, value)
     }
 }
 
