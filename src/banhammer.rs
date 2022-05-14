@@ -389,21 +389,42 @@ impl Banhammer {
         maybe_error: Option<&TransactionError>,
         near_gas: u128,
         token_exist: bool,
-    ) {
+    ) -> Vec<BucketName> {
+        let mut ban_events = vec![];
+        let near_gas_threshold = {
+            if token_exist {
+                self.config.excessive_gas_threshold as u128
+                    * 1_000_000_000_000
+                    * self.config.token_multiplier as u128
+            } else {
+                self.config.excessive_gas_threshold as u128 * 1_000_000_000_000
+            }
+        };
+
         let bucket_excessive_gas = BucketName::new(
             bucket_identity.clone(),
             bucket_value.clone(),
             BucketErrorKind::UsedExcessiveGas,
         );
-        let _x = self.leaky_buckets.get_fill(
+        let fill_result = self.leaky_buckets.get_fill(
             &bucket_excessive_gas,
             BucketValue::UsedExcessiveGas(near_gas),
         );
-
-        // if no errors - just return
-        if maybe_error.is_none() {
-            return;
+        // Check overflow
+        if fill_result >= BucketValue::UsedExcessiveGas(near_gas_threshold) {
+            ban_events.push(bucket_excessive_gas.clone());
+            // TODO: set base_size
+            self.leaky_buckets
+                .fill(bucket_excessive_gas, BucketValue::UsedExcessiveGas(1))
+        } else {
+            self.leaky_buckets.fill(bucket_excessive_gas, fill_result)
         }
+
+        // if it's no errors - just return
+        if maybe_error.is_none() {
+            return ban_events;
+        }
+
         match maybe_error.unwrap() {
             TransactionError::ErrIncorrectNonce | TransactionError::InvalidECDSA => {
                 let threshold = {
@@ -423,12 +444,14 @@ impl Banhammer {
                     .leaky_buckets
                     .get_fill(&bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
 
-                if fill_result > BucketValue::Reverts(threshold) {
+                // Check overflow
+                if fill_result >= BucketValue::IncorrectNonce(threshold) {
+                    // TODO: set base_size
+                    ban_events.push(bucket_incorrect_nonce.clone());
                     self.leaky_buckets
-                        .decrease(bucket_incorrect_nonce, fill_result)
+                        .fill(bucket_incorrect_nonce, BucketValue::IncorrectNonce(1))
                 } else {
-                    self.leaky_buckets
-                        .fill(bucket_incorrect_nonce, BucketValue::Reverts(1))
+                    self.leaky_buckets.fill(bucket_incorrect_nonce, fill_result)
                 }
             }
             TransactionError::MaxGas => {
@@ -445,11 +468,13 @@ impl Banhammer {
                     .leaky_buckets
                     .get_fill(&bucket_max_gas, BucketValue::MaxGas(1));
 
-                if fill_result > BucketValue::Reverts(threshold) {
-                    self.leaky_buckets.decrease(bucket_max_gas, fill_result)
-                } else {
+                if fill_result >= BucketValue::MaxGas(threshold) {
+                    // TODO: set base_size
+                    ban_events.push(bucket_max_gas.clone());
                     self.leaky_buckets
-                        .fill(bucket_max_gas, BucketValue::Reverts(1))
+                        .decrease(bucket_max_gas, BucketValue::MaxGas(1))
+                } else {
+                    self.leaky_buckets.fill(bucket_max_gas, fill_result)
                 }
             }
             TransactionError::Revert(_) => {
@@ -465,15 +490,17 @@ impl Banhammer {
                 let fill_result = self
                     .leaky_buckets
                     .get_fill(&bucket_reverts, BucketValue::Reverts(1));
-                if fill_result > BucketValue::Reverts(threshold) {
-                    self.leaky_buckets.decrease(bucket_reverts, fill_result)
-                } else {
+                if fill_result >= BucketValue::Reverts(threshold) {
+                    // TODO: set base_size
                     self.leaky_buckets
                         .fill(bucket_reverts, BucketValue::Reverts(1))
+                } else {
+                    self.leaky_buckets.fill(bucket_reverts, fill_result)
                 }
             }
             TransactionError::Relayer(_) => (),
         }
+        ban_events
     }
 
     pub fn tick(&mut self, time: Instant) {
@@ -634,6 +661,7 @@ impl Banhammer {
     }
 
     pub fn read_input(&mut self, input: &RelayerMessage) -> Vec<BanReason> {
+        let mut ban_events = vec![];
         let mut ban_reasons = vec![];
         let maybe_error = input.error.as_ref();
         let user = UserDetails {
@@ -648,28 +676,33 @@ impl Banhammer {
             self.associate_with_user_token(token, user.client, user.address);
         }
         let token_exist = user.token.clone().is_some();
-        self.process_bucket(
+        let mut events = self.process_bucket(
             BucketIdentity::IP,
             BucketNameValue::IP(input.client),
             maybe_error,
             NEAR_GAS_COUNTER,
             token_exist,
         );
-        self.process_bucket(
+        ban_events.append(&mut events);
+
+        let mut events = self.process_bucket(
             BucketIdentity::Address,
             BucketNameValue::Address(input.params.from),
             maybe_error,
             NEAR_GAS_COUNTER,
             token_exist,
         );
+        ban_events.append(&mut events);
+
         if let Some(token) = input.token.clone() {
-            self.process_bucket(
+            let mut events = self.process_bucket(
                 BucketIdentity::Token,
                 BucketNameValue::Token(token),
                 maybe_error,
                 NEAR_GAS_COUNTER,
                 token_exist,
             );
+            ban_events.append(&mut events);
         }
 
         self.increment_transaction_count(&user);

@@ -3,8 +3,7 @@ use ethereum_types::Address;
 use priority_queue::PriorityQueue;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, Sub};
-use std::time::SystemTime;
-use std::{collections::HashMap, net::IpAddr};
+use std::{collections::HashMap, net::IpAddr, time::SystemTime};
 
 pub struct BucketPriorityQueue(PriorityQueue<BucketName, u128>);
 
