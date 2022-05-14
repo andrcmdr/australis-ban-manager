@@ -1,5 +1,6 @@
 use crate::buckets::{
-    BucketErrorKind, BucketIdentity, BucketName, BucketNameValue, BucketValue, LeakyBucket,
+    BucketErrorKind, BucketIdentity, BucketName, BucketNameValue, BucketPriorityQueue, BucketValue,
+    LeakyBucket,
 };
 use crate::de::{RelayerMessage, Token, TransactionError};
 use ethereum_types::Address;
@@ -275,6 +276,7 @@ pub struct Banhammer {
     ban_list: BanList,
     config: Config,
     leaky_buckets: LeakyBucket,
+    bucket_pq: BucketPriorityQueue,
 }
 
 fn check_ban(
@@ -375,6 +377,7 @@ impl Banhammer {
             ban_list: BanList::default(),
             config,
             leaky_buckets: LeakyBucket::new(),
+            bucket_pq: BucketPriorityQueue::new(),
         }
     }
 

@@ -1,8 +1,65 @@
 use crate::de::Token;
 use ethereum_types::Address;
+use priority_queue::PriorityQueue;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, Sub};
+use std::time::SystemTime;
 use std::{collections::HashMap, net::IpAddr};
+
+pub struct BucketPriorityQueue(PriorityQueue<BucketName, u128>);
+
+impl BucketPriorityQueue {
+    pub fn new() -> Self {
+        Self(PriorityQueue::new())
+    }
+
+    pub fn current_time() -> u128 {
+        match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+            Ok(elapsed) => elapsed.as_millis(),
+            Err(e) => {
+                tracing::error!("{e:?}");
+                0
+            }
+        }
+    }
+
+    /// Update Bucket pruority to current time
+    pub fn update(&mut self, bucket_name: &BucketName) {
+        self.0.change_priority(bucket_name, Self::current_time());
+    }
+
+    /// Get current preority by key
+    pub fn get_priority(&mut self, bucket_name: &BucketName) -> u128 {
+        if let Some((_, priority)) = self.0.get(bucket_name) {
+            *priority
+        } else {
+            tracing::error!("Priority queue key not found",);
+            0
+        }
+    }
+
+    ///  Returns the couple (item, priority) with the greatest priority
+    /// in the queue, or None if it is empty.
+    pub fn peek(&self) -> Option<(&BucketName, &u128)> {
+        self.0.peek()
+    }
+
+    /// Removes the item with the greatest priority from the priority
+    /// queue and returns the pair (item, priority), or None if the queue is empty.
+    pub fn pop(&mut self) -> Option<(BucketName, u128)> {
+        self.0.pop()
+    }
+
+    /// Insert the item-priority pair into the queue.
+    /// If an element equal to item was already into the queue, it is updated and the old value of its priority returned in Some; otherwise, returns None.
+    pub fn push(&mut self, bucket_name: BucketName) {
+        self.0.push(bucket_name, Self::current_time());
+    }
+
+    pub fn remove(&mut self, bucket_name: &BucketName) -> Option<(BucketName, u128)> {
+        self.0.remove(bucket_name)
+    }
+}
 
 #[derive(Debug, Hash, Clone, Eq, PartialEq)]
 pub enum BucketIdentity {
