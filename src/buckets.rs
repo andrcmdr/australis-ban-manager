@@ -100,32 +100,50 @@ impl Add for BucketValue {
 impl Sub for BucketValue {
     type Output = Self;
 
+    /// If right values is greate or equal to left value
+    /// just set zero value directly
     fn sub(self, value: Self) -> Self::Output {
         match self {
             BucketValue::IncorrectNonce(val_l) => {
                 if let BucketValue::IncorrectNonce(val_r) = value.clone() {
-                    BucketValue::IncorrectNonce(val_l - val_r)
+                    if val_l > val_r {
+                        BucketValue::IncorrectNonce(val_l - val_r)
+                    } else {
+                        BucketValue::IncorrectNonce(0)
+                    }
                 } else {
                     unimplemented!()
                 }
             }
             BucketValue::MaxGas(val_l) => {
                 if let BucketValue::MaxGas(val_r) = value.clone() {
-                    BucketValue::MaxGas(val_l - val_r)
+                    if val_l > val_r {
+                        BucketValue::MaxGas(val_l - val_r)
+                    } else {
+                        BucketValue::MaxGas(0)
+                    }
                 } else {
                     unimplemented!()
                 }
             }
             BucketValue::UsedExcessiveGas(val_l) => {
                 if let BucketValue::UsedExcessiveGas(val_r) = value.clone() {
-                    BucketValue::UsedExcessiveGas(val_l - val_r)
+                    if val_l > val_r {
+                        BucketValue::UsedExcessiveGas(val_l - val_r)
+                    } else {
+                        BucketValue::UsedExcessiveGas(0)
+                    }
                 } else {
                     unimplemented!()
                 }
             }
             BucketValue::Reverts(val_l) => {
                 if let BucketValue::Reverts(val_r) = value.clone() {
-                    BucketValue::Reverts(val_l - val_r)
+                    if val_l > val_r {
+                        BucketValue::Reverts(val_l - val_r)
+                    } else {
+                        BucketValue::Reverts(0)
+                    }
                 } else {
                     unimplemented!()
                 }

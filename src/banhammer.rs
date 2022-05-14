@@ -402,7 +402,7 @@ impl Banhammer {
             return;
         }
         match maybe_error.unwrap() {
-            TransactionError::ErrIncorrectNonce => {
+            TransactionError::ErrIncorrectNonce | TransactionError::InvalidECDSA => {
                 let threshold = {
                     if token_exist {
                         self.config.incorrect_nonce_threshold * self.config.token_multiplier
@@ -416,19 +416,17 @@ impl Banhammer {
                     bucket_value,
                     BucketErrorKind::IncorrectNonce,
                 );
-                let _x = self
+                let fill_result = self
                     .leaky_buckets
                     .get_fill(&bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
-            }
-            TransactionError::InvalidECDSA => {
-                let bucket_incorrect_nonce = BucketName::new(
-                    bucket_identity,
-                    bucket_value,
-                    BucketErrorKind::IncorrectNonce,
-                );
-                let _x = self
-                    .leaky_buckets
-                    .get_fill(&bucket_incorrect_nonce, BucketValue::IncorrectNonce(1));
+
+                if fill_result > BucketValue::Reverts(threshold) {
+                    self.leaky_buckets
+                        .decrease(bucket_incorrect_nonce, fill_result)
+                } else {
+                    self.leaky_buckets
+                        .fill(bucket_incorrect_nonce, BucketValue::Reverts(1))
+                }
             }
             TransactionError::MaxGas => {
                 let threshold = {
@@ -440,9 +438,16 @@ impl Banhammer {
                 };
                 let bucket_max_gas =
                     BucketName::new(bucket_identity, bucket_value, BucketErrorKind::MaxGas);
-                let _x = self
+                let fill_result = self
                     .leaky_buckets
                     .get_fill(&bucket_max_gas, BucketValue::MaxGas(1));
+
+                if fill_result > BucketValue::Reverts(threshold) {
+                    self.leaky_buckets.decrease(bucket_max_gas, fill_result)
+                } else {
+                    self.leaky_buckets
+                        .fill(bucket_max_gas, BucketValue::Reverts(1))
+                }
             }
             TransactionError::Revert(_) => {
                 let threshold = {
