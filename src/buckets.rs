@@ -5,16 +5,16 @@ use serde::{Deserialize, Serialize};
 use std::ops::{Add, Sub};
 use std::{collections::HashMap, net::IpAddr, time::SystemTime};
 
-pub struct BucketPriorityQueue(PriorityQueue<BucketName, u128>);
+pub struct BucketPriorityQueue(PriorityQueue<BucketName, u64>);
 
 impl BucketPriorityQueue {
     pub fn new() -> Self {
         Self(PriorityQueue::new())
     }
 
-    pub fn current_time() -> u128 {
+    pub fn current_time() -> u64 {
         match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-            Ok(elapsed) => elapsed.as_millis(),
+            Ok(elapsed) => elapsed.as_secs(),
             Err(e) => {
                 tracing::error!("{e:?}");
                 0
@@ -28,7 +28,7 @@ impl BucketPriorityQueue {
     }
 
     /// Get current preority by key
-    pub fn get_priority(&mut self, bucket_name: &BucketName) -> u128 {
+    pub fn get_priority(&mut self, bucket_name: &BucketName) -> u64 {
         if let Some((_, priority)) = self.0.get(bucket_name) {
             *priority
         } else {
@@ -39,13 +39,13 @@ impl BucketPriorityQueue {
 
     ///  Returns the couple (item, priority) with the greatest priority
     /// in the queue, or None if it is empty.
-    pub fn peek(&self) -> Option<(&BucketName, &u128)> {
+    pub fn peek(&self) -> Option<(&BucketName, &u64)> {
         self.0.peek()
     }
 
     /// Removes the item with the greatest priority from the priority
     /// queue and returns the pair (item, priority), or None if the queue is empty.
-    pub fn pop(&mut self) -> Option<(BucketName, u128)> {
+    pub fn pop(&mut self) -> Option<(BucketName, u64)> {
         self.0.pop()
     }
 
@@ -55,8 +55,25 @@ impl BucketPriorityQueue {
         self.0.push(bucket_name, Self::current_time());
     }
 
-    pub fn remove(&mut self, bucket_name: &BucketName) -> Option<(BucketName, u128)> {
+    pub fn remove(&mut self, bucket_name: &BucketName) -> Option<(BucketName, u64)> {
         self.0.remove(bucket_name)
+    }
+
+    /// Free priority queue
+    pub fn retention_free(&mut self, retention_time: u64) -> Vec<BucketName> {
+        let mut buckets = vec![];
+        loop {
+            if let Some((bucket_name, value)) = self.peek() {
+                if Self::current_time() - value > retention_time {
+                    buckets.push(bucket_name.clone());
+                    // Remove from queue
+                    self.pop();
+                }
+            } else {
+                break;
+            }
+        }
+        buckets
     }
 }
 
@@ -255,7 +272,7 @@ impl LeakyBucket {
     }
 
     /// Update fill
-    pub fn fill(&mut self, key: BucketName, value: BucketValue) {
+    pub fn fill(&mut self, key: &BucketName, value: BucketValue) {
         *self.0.entry(key.clone()).or_insert(value.clone()) = value.clone();
     }
 
@@ -303,6 +320,10 @@ impl LeakyBucket {
     /// Leaky bucket
     pub fn leaky(&mut self, key: BucketName, value: BucketValue) {
         self.decrease(key, value)
+    }
+
+    pub fn remove(&mut self, key: &BucketName) {
+        self.0.remove(key);
     }
 }
 

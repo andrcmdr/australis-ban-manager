@@ -415,10 +415,11 @@ impl Banhammer {
             ban_events.push(bucket_excessive_gas.clone());
             // TODO: set base_size
             self.leaky_buckets
-                .fill(bucket_excessive_gas, BucketValue::UsedExcessiveGas(1))
+                .fill(&bucket_excessive_gas, BucketValue::UsedExcessiveGas(1))
         } else {
-            self.leaky_buckets.fill(bucket_excessive_gas, fill_result)
+            self.leaky_buckets.fill(&bucket_excessive_gas, fill_result)
         }
+        self.bucket_pq.push(bucket_excessive_gas);
 
         // if it's no errors - just return
         if maybe_error.is_none() {
@@ -449,10 +450,12 @@ impl Banhammer {
                     // TODO: set base_size
                     ban_events.push(bucket_incorrect_nonce.clone());
                     self.leaky_buckets
-                        .fill(bucket_incorrect_nonce, BucketValue::IncorrectNonce(1))
+                        .fill(&bucket_incorrect_nonce, BucketValue::IncorrectNonce(1))
                 } else {
-                    self.leaky_buckets.fill(bucket_incorrect_nonce, fill_result)
+                    self.leaky_buckets
+                        .fill(&bucket_incorrect_nonce, fill_result)
                 }
+                self.bucket_pq.push(bucket_incorrect_nonce);
             }
             TransactionError::MaxGas => {
                 let threshold = {
@@ -472,10 +475,11 @@ impl Banhammer {
                     // TODO: set base_size
                     ban_events.push(bucket_max_gas.clone());
                     self.leaky_buckets
-                        .decrease(bucket_max_gas, BucketValue::MaxGas(1))
+                        .fill(&bucket_max_gas, BucketValue::MaxGas(1))
                 } else {
-                    self.leaky_buckets.fill(bucket_max_gas, fill_result)
+                    self.leaky_buckets.fill(&bucket_max_gas, fill_result)
                 }
+                self.bucket_pq.push(bucket_max_gas);
             }
             TransactionError::Revert(_) => {
                 let threshold = {
@@ -493,26 +497,24 @@ impl Banhammer {
                 if fill_result >= BucketValue::Reverts(threshold) {
                     // TODO: set base_size
                     self.leaky_buckets
-                        .fill(bucket_reverts, BucketValue::Reverts(1))
+                        .fill(&bucket_reverts, BucketValue::Reverts(1))
                 } else {
-                    self.leaky_buckets.fill(bucket_reverts, fill_result)
+                    self.leaky_buckets.fill(&bucket_reverts, fill_result)
                 }
+                self.bucket_pq.push(bucket_reverts);
             }
             TransactionError::Relayer(_) => (),
         }
         ban_events
     }
 
+    /// Tick for retention time for leaky bucket
     pub fn tick(&mut self, time: Instant) {
         if time.elapsed() > self.next_check {
-            for (_, client) in self.user_clients.iter_mut() {
-                client.ban_progress.reset();
-            }
-            for (_, address) in self.user_addresses.iter_mut() {
-                address.ban_progress.reset();
-            }
-            for (_, token) in self.user_tokens.iter_mut() {
-                token.ban_progress.reset();
+            // TODO: retention time in seconds from config
+            let buckets_to_remove = self.bucket_pq.retention_free(60);
+            for bucket in buckets_to_remove {
+                self.leaky_buckets.remove(&bucket);
             }
             self.next_check += self.config.timeframe;
         }
