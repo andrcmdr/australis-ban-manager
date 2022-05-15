@@ -122,7 +122,16 @@ pub enum BucketValue {
     Custom(u32),
 }
 
-pub struct LeakyBucket(HashMap<BucketName, BucketValue>);
+/// Bucket data contain value kind
+/// for specific bucket, and last bucket
+/// update UNIX time in sec
+#[derive(Debug, Hash, Clone)]
+pub struct BucketData {
+    pub value: BucketValue,
+    pub last_update: u64,
+}
+
+pub struct LeakyBucket(HashMap<BucketName, BucketData>);
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct BucketConfig {
@@ -233,8 +242,8 @@ impl LeakyBucket {
 
     /// Calculate new fill value
     pub fn get_fill(&self, key: &BucketName, value: BucketValue) -> BucketValue {
-        let old_value = if let Some(val) = self.0.get(&key) {
-            val
+        let old_value = if let Some(data) = self.0.get(&key) {
+            data.value.clone()
         } else {
             return value;
         };
@@ -273,53 +282,60 @@ impl LeakyBucket {
 
     /// Update fill
     pub fn fill(&mut self, key: &BucketName, value: BucketValue) {
-        *self.0.entry(key.clone()).or_insert(value.clone()) = value.clone();
+        let data = self.0.entry(key.clone()).or_insert(BucketData {
+            value: value.clone(),
+            last_update: BucketPriorityQueue::current_time(),
+        });
+        *data = BucketData {
+            value: value.clone(),
+            last_update: data.last_update,
+        };
     }
 
-    /// Decrease bucket value
-    pub fn decrease(&mut self, key: BucketName, value: BucketValue) {
-        let old_value = if let Some(val) = self.0.get(&key) {
-            val
-        } else {
-            return;
-        };
+    /// Leaky bucket
+    pub fn leaky(&mut self, key: BucketName, value: BucketValue, config: BucketConfig) {
+        use std::cmp::max;
+        let duration = max(86400 / config.leak_rate, 1);
+        let number_of_events = 86400 / duration;
+        let _amount_per_leak_event = config.leak_rate / number_of_events;
+
+        // TODO: Calc Leaky condition
         let new_value = match key.error {
             BucketErrorKind::IncorrectNonce => {
                 if let BucketValue::IncorrectNonce(_) = value.clone() {
-                    old_value.clone() - value
+                    value
                 } else {
                     todo!("Add error handling");
                 }
             }
             BucketErrorKind::MaxGas => {
                 if let BucketValue::MaxGas(_) = value.clone() {
-                    old_value.clone() - value
+                    value
                 } else {
                     todo!("Add error handling");
                 }
             }
             BucketErrorKind::UsedExcessiveGas => {
                 if let BucketValue::UsedExcessiveGas(_) = value.clone() {
-                    old_value.clone() - value
+                    value
                 } else {
                     todo!("Add error handling");
                 }
             }
             BucketErrorKind::Reverts => {
                 if let BucketValue::Reverts(_) = value.clone() {
-                    old_value.clone() - value
+                    value
                 } else {
                     todo!("Add error handling");
                 }
             }
             _ => todo!("Add case fot custom error"),
         };
-        *self.0.entry(key.clone()).or_insert(new_value.clone()) = new_value.clone();
-    }
-
-    /// Leaky bucket
-    pub fn leaky(&mut self, key: BucketName, value: BucketValue) {
-        self.decrease(key, value)
+        let data = BucketData {
+            value: new_value,
+            last_update: BucketPriorityQueue::current_time(),
+        };
+        *self.0.entry(key.clone()).or_insert(data.clone()) = data.clone();
     }
 
     pub fn remove(&mut self, key: &BucketName) {
