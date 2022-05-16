@@ -294,10 +294,22 @@ impl LeakyBucket {
 
     /// Leaky bucket
     pub fn leaky(&mut self, key: BucketName, value: BucketValue, config: BucketConfig) {
+        let bucket = if let Some(bucket) = self.0.get(&key) {
+            bucket
+        } else {
+            return;
+        };
         use std::cmp::max;
         let duration = max(86400 / config.leak_rate, 1);
         let number_of_events = 86400 / duration;
         let _amount_per_leak_event = config.leak_rate / number_of_events;
+        let current_time = BucketPriorityQueue::current_time();
+        let leak_time_detla = current_time - bucket.last_update;
+        if leak_time_detla < duration {
+            // NOP
+            return;
+        }
+        let _leak_amount = config.leak_rate * leak_time_detla / 86400;
 
         // TODO: Calc Leaky condition
         let new_value = match key.error {
