@@ -1,6 +1,6 @@
 use crate::buckets::{
-    BucketErrorKind, BucketIdentity, BucketName, BucketNameValue, BucketPriorityQueue, BucketValue,
-    LeakyBucket,
+    BucketConfig, BucketErrorKind, BucketIdentity, BucketName, BucketNameValue,
+    BucketPriorityQueue, BucketValue, LeakyBucket,
 };
 use crate::de::{RelayerMessage, Token, TransactionError};
 use ethereum_types::Address;
@@ -266,6 +266,7 @@ pub struct Config {
     pub revert_threshold: u32,
     pub excessive_gas_threshold: u32,
     pub token_multiplier: u32,
+    pub leaky_buckets: BucketConfig,
 }
 
 pub struct Banhammer {
@@ -417,6 +418,7 @@ impl Banhammer {
             self.leaky_buckets
                 .fill(&bucket_excessive_gas, BucketValue::UsedExcessiveGas(1))
         } else {
+            self.leaky_buckets.leaky(&bucket_excessive_gas, self.config);
             self.leaky_buckets.fill(&bucket_excessive_gas, fill_result)
         }
         self.bucket_pq.push(bucket_excessive_gas);
