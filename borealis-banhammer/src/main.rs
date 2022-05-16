@@ -757,6 +757,18 @@ fn main() -> Result<(), Error> {
             .home_dir
             .unwrap_or(std::path::PathBuf::from("./.borealis-banhammer"));
 
+        // Channels for receiving relayer, buckets configuration and eth_call messages,
+        // and channel for transmitting the Banhammer's ban event messages,
+        // to/from NATS subjects
+        let (ban_event_stream_tx, ban_event_stream_rx) = 
+            mpsc::channel::<BanhammerBanEventMessage>(1000);
+        let (relayer_message_stream_tx, relayer_message_stream_rx) = 
+            mpsc::channel::<RelayerMessage>(1000);
+        let (config_message_stream_tx, config_message_stream_rx) = 
+            mpsc::channel::<BanhammerConfigMessage>(1000);
+        let (eth_call_message_stream_tx, eth_call_message_stream_rx) = 
+            mpsc::channel::<EthCallMessage>(1000);
+
         // Channels for sending/receiving NATS connection's events
         // and channel for sending/receiving actual, current or updated, NATS connection
         let (connection_event_tx, connection_event_rx) = 
