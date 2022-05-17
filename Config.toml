@@ -4,3 +4,9 @@ max_gas_threshold = 5
 revert_threshold = 100
 excessive_gas_threshold = 30000 # In Tgas
 token_multiplier = 10
+
+[leaky_buckets]
+base_size = 1
+leak_rate = 3600
+overflow_size = 1000
+retention = 3600

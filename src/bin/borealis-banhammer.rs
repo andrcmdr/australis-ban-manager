@@ -11,8 +11,9 @@ use hyper::{
 use prometheus::Encoder;
 use std::{fs, io, time::Instant};
 use tokio::join;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
+/// Serve requests for Prometheus measure response
 async fn serve_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     let buffer = Measure::gather();
     let encoder = prometheus::TextEncoder::new();
@@ -24,8 +25,8 @@ async fn serve_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> 
     Ok(response)
 }
 
+/// Hyper HTTP listener
 async fn serve() {
-    // TODO: set ad config param
     let addr = ([127, 0, 0, 1], 9898).into();
     info!("Listening on http://{}", addr);
 
@@ -38,39 +39,44 @@ async fn serve() {
     }
 }
 
+/// Process leaky buckets ban
 async fn process(ban_manager_config: banhammer::Config) {
     let mut ban_manager = Banhammer::new(ban_manager_config);
     let time = Instant::now();
 
     info!("Starting banhammer...");
     loop {
+        // Read input data from STDIN
         let mut buffer = String::new();
         let stdin = io::stdin();
         stdin.read_line(&mut buffer).expect("failed read input");
 
+        // Parse relayer message
         let relayer_input: RelayerMessage = match serde_json::from_str(&buffer) {
             Ok(r) => r,
-            Err(_e) => {
-                // TODO relayer failed parses
-                error!("failed to parse: {}", buffer);
+            Err(err) => {
+                error!("failed to parse: {}\nwith errror: {:>}", buffer, err);
                 continue;
             }
         };
 
+        // Read raleyer message and process leaky buckets.
+        // As result - Ban Events
         let ban_events = ban_manager.read_input(&relayer_input);
+        debug!("ban events count: {}", ban_events.len());
         Measure::inc(Counter::MessagesReceived);
         for ban_event in ban_events {
             info!("Ban event: {:?}", ban_event);
             Measure::inc(Counter::MessagesSent);
             Measure::inc(Counter::BanReason(ban_event.clone()));
         }
-
         Measure::inc(Counter::MessagesProcessed);
 
         ban_manager.tick(time);
     }
 }
 
+/// Handle all asyc tasks
 async fn handle(ban_manager_config: banhammer::Config) {
     join!(serve(), process(ban_manager_config));
 }

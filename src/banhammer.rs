@@ -1,89 +1,28 @@
+//! # Banhummer
+//! Contains basic logic for detecting ban event related by
+//! Leaky Buckets algorithm.
+//!
+//! Bucket can:
+//! - fill
+//! - leak
+//! - overflow
+//! - remove
+//! Tge "fill" is always >= 0
+//!
+//! Bucket name contains fields: Identiti + IdentityVAlie + ErrorKind
 use crate::buckets::{
     BucketConfig, BucketErrorKind, BucketIdentity, BucketName, BucketNameValue,
     BucketPriorityQueue, LeakyBucket,
 };
 use crate::de::{RelayerMessage, TransactionError};
-use serde::{
-    de::{self, Error, Visitor},
-    Deserialize, Deserializer, Serialize,
-};
-use std::{
-    fmt::{self},
-    time::{Duration, Instant},
-};
+use serde::{Deserialize, Serialize};
+use std::time::{Duration, Instant};
 
 const NEAR_GAS_COUNTER: u64 = 202651902028573;
 
-fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct DurationVisitor;
-
-    impl<'de> Visitor<'de> for DurationVisitor {
-        type Value = Duration;
-
-        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.write_str("transaction as hex string")
-        }
-
-        fn visit_u8<E>(self, duration: u8) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            self.visit_u64(duration as u64)
-        }
-
-        fn visit_u16<E>(self, duration: u16) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            self.visit_u64(duration as u64)
-        }
-
-        fn visit_u64<E>(self, duration: u64) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(Duration::from_secs(duration))
-        }
-
-        fn visit_i8<E>(self, duration: i8) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            self.visit_u64(duration as u64)
-        }
-
-        fn visit_i16<E>(self, duration: i16) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            self.visit_u64(duration as u64)
-        }
-
-        fn visit_i32<E>(self, duration: i32) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            self.visit_u64(duration as u64)
-        }
-
-        fn visit_i64<E>(self, duration: i64) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            self.visit_u64(duration as u64)
-        }
-    }
-
-    deserializer.deserialize_u64(DurationVisitor)
-}
-
+/// Banhammer configs
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    #[serde(deserialize_with = "deserialize_duration")]
-    pub timeframe: Duration,
     pub incorrect_nonce_threshold: u64,
     pub max_gas_threshold: u64,
     pub revert_threshold: u64,
@@ -92,8 +31,9 @@ pub struct Config {
     pub leaky_buckets: BucketConfig,
 }
 
+/// Basic Banhammer data struct
 pub struct Banhammer {
-    next_check: Duration,
+    next_retention_check: Duration,
     config: Config,
     leaky_buckets: LeakyBucket,
     bucket_pq: BucketPriorityQueue,
@@ -102,11 +42,48 @@ pub struct Banhammer {
 impl Banhammer {
     pub fn new(config: Config) -> Self {
         Self {
-            next_check: config.timeframe,
+            next_retention_check: config.leaky_buckets.retention,
             config,
-            leaky_buckets: LeakyBucket::new(),
-            bucket_pq: BucketPriorityQueue::new(),
+            leaky_buckets: LeakyBucket::default(),
+            bucket_pq: BucketPriorityQueue::default(),
         }
+    }
+
+    /// Check bucket by threshold and process
+    /// actions: fill, leak, overflow.
+    /// Return: ban event
+    fn check_and_change_bucket(
+        &mut self,
+        bucket_identity: &BucketIdentity,
+        bucket_value: &BucketNameValue,
+        bucket_error_kind: BucketErrorKind,
+        threshold: u64,
+        fill: u64,
+    ) -> Option<BucketName> {
+        let mut ban_event = None;
+        let bucket_name = BucketName::new(
+            bucket_identity.clone(),
+            bucket_value.clone(),
+            bucket_error_kind,
+        );
+        let fill_result = self.leaky_buckets.get_fill(&bucket_name, fill);
+        // Check overflow
+        if fill_result >= threshold {
+            ban_event = Some(bucket_name.clone());
+            // Set leaky bucket ti base size after overflow
+            self.leaky_buckets
+                .fill(&bucket_name, self.config.leaky_buckets.base_size)
+        } else {
+            // Check leaky status and leak if it needed
+            self.leaky_buckets
+                .leaky(&bucket_name, &self.config.leaky_buckets);
+            // Fill bucket
+            self.leaky_buckets.fill(&bucket_name, fill_result)
+        }
+        // Set priority queue for bucket with
+        // last_update field as current time
+        self.bucket_pq.push(bucket_name);
+        ban_event
     }
 
     /// Process bucket live cycle    
@@ -129,23 +106,15 @@ impl Banhammer {
             }
         };
 
-        let bucket_excessive_gas = BucketName::new(
-            bucket_identity.clone(),
-            bucket_value.clone(),
+        if let Some(ban_event) = self.check_and_change_bucket(
+            &bucket_identity,
+            &bucket_value,
             BucketErrorKind::UsedExcessiveGas,
-        );
-        let fill_result = self.leaky_buckets.get_fill(&bucket_excessive_gas, near_gas);
-        // Check overflow
-        if fill_result >= near_gas_threshold {
-            ban_events.push(bucket_excessive_gas.clone());
-            self.leaky_buckets
-                .fill(&bucket_excessive_gas, self.config.leaky_buckets.base_size)
-        } else {
-            self.leaky_buckets
-                .leaky(&bucket_excessive_gas, &self.config.leaky_buckets);
-            self.leaky_buckets.fill(&bucket_excessive_gas, fill_result)
+            near_gas_threshold,
+            near_gas,
+        ) {
+            ban_events.push(ban_event);
         }
-        self.bucket_pq.push(bucket_excessive_gas);
 
         // if it's no errors - just return
         if maybe_error.is_none() {
@@ -162,25 +131,15 @@ impl Banhammer {
                     }
                 } as u64;
 
-                let bucket_incorrect_nonce = BucketName::new(
-                    bucket_identity,
-                    bucket_value,
+                if let Some(ban_event) = self.check_and_change_bucket(
+                    &bucket_identity,
+                    &bucket_value,
                     BucketErrorKind::IncorrectNonce,
-                );
-                let fill_result = self.leaky_buckets.get_fill(&bucket_incorrect_nonce, 1);
-
-                // Check overflow
-                if fill_result >= threshold {
-                    ban_events.push(bucket_incorrect_nonce.clone());
-                    self.leaky_buckets
-                        .fill(&bucket_incorrect_nonce, self.config.leaky_buckets.base_size)
-                } else {
-                    self.leaky_buckets
-                        .leaky(&bucket_incorrect_nonce, &self.config.leaky_buckets);
-                    self.leaky_buckets
-                        .fill(&bucket_incorrect_nonce, fill_result)
+                    threshold,
+                    1,
+                ) {
+                    ban_events.push(ban_event);
                 }
-                self.bucket_pq.push(bucket_incorrect_nonce);
             }
             TransactionError::MaxGas => {
                 let threshold = {
@@ -190,20 +149,16 @@ impl Banhammer {
                         self.config.max_gas_threshold
                     }
                 } as u64;
-                let bucket_max_gas =
-                    BucketName::new(bucket_identity, bucket_value, BucketErrorKind::MaxGas);
-                let fill_result = self.leaky_buckets.get_fill(&bucket_max_gas, 1);
 
-                if fill_result >= threshold {
-                    ban_events.push(bucket_max_gas.clone());
-                    self.leaky_buckets
-                        .fill(&bucket_max_gas, self.config.leaky_buckets.base_size)
-                } else {
-                    self.leaky_buckets
-                        .leaky(&bucket_max_gas, &self.config.leaky_buckets);
-                    self.leaky_buckets.fill(&bucket_max_gas, fill_result)
+                if let Some(ban_event) = self.check_and_change_bucket(
+                    &bucket_identity,
+                    &bucket_value,
+                    BucketErrorKind::MaxGas,
+                    threshold,
+                    1,
+                ) {
+                    ban_events.push(ban_event);
                 }
-                self.bucket_pq.push(bucket_max_gas);
             }
             TransactionError::Revert(_) => {
                 let threshold = {
@@ -213,18 +168,16 @@ impl Banhammer {
                         self.config.revert_threshold
                     }
                 } as u64;
-                let bucket_reverts =
-                    BucketName::new(bucket_identity, bucket_value, BucketErrorKind::Reverts);
-                let fill_result = self.leaky_buckets.get_fill(&bucket_reverts, 1);
-                if fill_result >= threshold {
-                    self.leaky_buckets
-                        .fill(&bucket_reverts, self.config.leaky_buckets.base_size)
-                } else {
-                    self.leaky_buckets
-                        .leaky(&bucket_reverts, &self.config.leaky_buckets);
-                    self.leaky_buckets.fill(&bucket_reverts, fill_result)
+
+                if let Some(ban_event) = self.check_and_change_bucket(
+                    &bucket_identity,
+                    &bucket_value,
+                    BucketErrorKind::Reverts,
+                    threshold,
+                    1,
+                ) {
+                    ban_events.push(ban_event);
                 }
-                self.bucket_pq.push(bucket_reverts);
             }
             TransactionError::Relayer(_) => (),
         }
@@ -233,22 +186,27 @@ impl Banhammer {
 
     /// Tick for retention time for leaky bucket
     pub fn tick(&mut self, time: Instant) {
-        if time.elapsed() > self.next_check {
+        if time.elapsed() > self.next_retention_check {
+            // Get buckets fpr remove.
             // Retention time in seconds
             let buckets_to_remove = self.bucket_pq.retention_free(60);
             for bucket in buckets_to_remove {
+                tracing::info!("bucket removed: {bucket:?}");
                 self.leaky_buckets.remove(&bucket);
             }
-            self.next_check += self.config.timeframe;
+            self.next_retention_check += self.config.leaky_buckets.retention;
         }
     }
 
+    /// Read relayer input, process leaky bucket and return ban events list
     pub fn read_input(&mut self, input: &RelayerMessage) -> Vec<BucketName> {
         let mut ban_events = vec![];
         let maybe_error = input.error.as_ref();
 
-        //let token_exist = user.token.clone().is_some();
+        // Check is token exist
         let token_exist = input.token.is_some();
+
+        // Process leaky buckets for Client IPs
         let mut events = self.process_bucket(
             BucketIdentity::IP,
             BucketNameValue::IP(input.client),
@@ -258,6 +216,7 @@ impl Banhammer {
         );
         ban_events.append(&mut events);
 
+        // Process leaky buckets for Client Eth Addresses
         let mut events = self.process_bucket(
             BucketIdentity::Address,
             BucketNameValue::Address(input.params.from),
@@ -267,6 +226,7 @@ impl Banhammer {
         );
         ban_events.append(&mut events);
 
+        // Process leaky buckets for Client API tokens
         if let Some(token) = input.token.clone() {
             let mut events = self.process_bucket(
                 BucketIdentity::Token,
