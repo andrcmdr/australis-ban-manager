@@ -80,7 +80,7 @@ pub(crate) struct Context {
 #[derive(Parser, Debug, Clone, Copy, Eq, PartialEq)]
 pub enum VerbosityLevel {
     WithRuntimeThreadsDump,
-    WithBanhammerMessagesDump,
+    WithNATSMessagesDump,
 }
 
 impl FromStr for VerbosityLevel {
@@ -89,8 +89,8 @@ impl FromStr for VerbosityLevel {
         let input = s.to_lowercase();
         match input.as_str() {
             "0" | "withruntimethreadsdump" => Ok(VerbosityLevel::WithRuntimeThreadsDump),
-            "1" | "withbanhammermessagesdump" => Ok(VerbosityLevel::WithBanhammerMessagesDump),
-            _ => Err("Unknown output verbosity level: `--verbose` should be `WithRuntimeThreadsDump` (`0`) or `WithBanhammerMessagesDump` (`1`)".to_string().into()),
+            "1" | "withnatsmessagesdump" => Ok(VerbosityLevel::WithNATSMessagesDump),
+            _ => Err("Unknown output verbosity level: `--verbose` should be `WithRuntimeThreadsDump` (`0`) or `WithNATSMessagesDump` (`1`)".to_string().into()),
         }
     }
 }

@@ -5,6 +5,7 @@ use cli::{
 };
 use core::sync::atomic::{AtomicUsize, Ordering};
 use nats;
+use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::runtime::{Runtime, Builder};
 use tokio::signal::{ctrl_c, unix::{signal, SignalKind}};
@@ -98,6 +99,15 @@ async fn key_switch() -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct BanhammerBanEventMessage;
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct BanhammerConfigMessage;
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct RelayerMessage;
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct EthCallMessage;
+
 async fn message_producer(
     mut events_stream: mpsc::Receiver<BanhammerBanEventMessage>,
     actual_connection_rx: watch::Receiver<NATSConnection>,
@@ -107,7 +117,7 @@ async fn message_producer(
 ) {
     info!(
         target: "borealis_banhammer_nats",
-        "Message producer loop started: producing and streaming new ban event messages\n"
+        "Message producer loop starting: producing and streaming new ban event messages\n"
     );
 
     while let Some(ban_event_message) = events_stream.recv().await {
@@ -152,7 +162,7 @@ async fn message_producer(
         };
 
         // Print `BanhammerBanEventMessage` data structure for debug purposes.
-        if let Some(VerbosityLevel::WithBanhammerMessagesDump) = verbosity_level {
+        if let Some(VerbosityLevel::WithNATSMessagesDump) = verbosity_level {
             debug!(
                 target: "borealis_banhammer_nats",
                 "Banhammer ban event message: {}\n",
@@ -762,10 +772,10 @@ fn main() -> Result<(), Error> {
         // to/from NATS subjects
         let (ban_event_stream_tx, ban_event_stream_rx) = 
             mpsc::channel::<BanhammerBanEventMessage>(1000);
-        let (relayer_message_stream_tx, relayer_message_stream_rx) = 
-            mpsc::channel::<RelayerMessage>(1000);
         let (config_message_stream_tx, config_message_stream_rx) = 
             mpsc::channel::<BanhammerConfigMessage>(1000);
+        let (relayer_message_stream_tx, relayer_message_stream_rx) = 
+            mpsc::channel::<RelayerMessage>(1000);
         let (eth_call_message_stream_tx, eth_call_message_stream_rx) = 
             mpsc::channel::<EthCallMessage>(1000);
 
@@ -776,29 +786,52 @@ fn main() -> Result<(), Error> {
         let (actual_connection_tx, actual_connection_rx) =
             watch::channel::<NATSConnection>(NATSConnection::new());
 
+        // Channel rx/tx pair clones for checking of NATS connection events processing
         let connection_event_sender = connection_event_tx.clone();
         let actual_connection_receiver = actual_connection_tx.subscribe();
 
-        if let SubCommand::Check(run_args) | SubCommand::Run(run_args) = opts.subcmd.clone() {
-            loop {
-                let result = NATSConnection::connect(run_args.to_owned(), connection_event_tx.clone());
-                match &result {
-                    Ok(nats_connection) => {
-                        debug!(target: "borealis_banhammer_nats", "Main(): Connect with extended options: NATS Connection: {:?}", nats_connection);
-                        actual_connection_tx.send(nats_connection.clone())
-                            .unwrap_or_else(|error|
-                                error!(target: "borealis_banhammer_nats", "Main(): Connect with extended options: NATS Connection with CID {} send error: {:?}", nats_connection.cid, error)
-                            );
-                        drop(nats_connection);
-                        drop(result);
-                        break;
-                    }
-                    Err(error) => {
-                        error!(target: "borealis_banhammer_nats", "Main(): Connect with extended options: NATS connection error or wrong credentials: {:?}", error);
-                        drop(error);
-                        drop(result);
-                        std::thread::sleep(core::time::Duration::from_millis(500));
-                        continue;
+        // Channel rx/tx pair clones for NATS connection events sent to event processing,
+        // and receiving actual NATS connection, in a Banhammer's ban event messages producer
+        let connection_event_tx_for_bh_msg_pub = connection_event_tx.clone();
+        let actual_connection_rx_for_bh_msg_pub = actual_connection_tx.subscribe();
+
+        // Channel rx/tx pair clones for NATS connection events sent to event processing,
+        // and receiving actual NATS connection, in a Banhammer's buckets configuration messages consumer
+        let connection_event_tx_for_bh_conf_msg_sub = connection_event_tx.clone();
+        let actual_connection_rx_for_bh_conf_msg_sub = actual_connection_tx.subscribe();
+
+        // Channel rx/tx pair clones for NATS connection events sent to event processing,
+        // and receiving actual NATS connection, in a Relayer's messages consumer
+        let connection_event_tx_for_rlr_msg_sub = connection_event_tx.clone();
+        let actual_connection_rx_for_rlr_msg_sub = actual_connection_tx.subscribe();
+
+        // Channel rx/tx pair clones for NATS connection events sent to event processing,
+        // and receiving actual NATS connection, in a eth_call messages consumer
+        let connection_event_tx_for_ethcall_msg_sub = connection_event_tx.clone();
+        let actual_connection_rx_for_ethcall_msg_sub = actual_connection_tx.subscribe();
+
+        match opts.subcmd.clone() {
+            SubCommand::Check(context) | SubCommand::Run(context) => {
+                loop {
+                    let result = NATSConnection::connect(context.clone(), connection_event_tx.clone());
+                    match &result {
+                        Ok(nats_connection) => {
+                            debug!(target: "borealis_banhammer_nats", "Main(): Connect with extended options: NATS Connection: {:?}", nats_connection);
+                            actual_connection_tx.send(nats_connection.clone())
+                                .unwrap_or_else(|error|
+                                    error!(target: "borealis_banhammer_nats", "Main(): Connect with extended options: NATS Connection with CID {} send error: {:?}", nats_connection.cid, error)
+                                );
+                            drop(nats_connection);
+                            drop(result);
+                            break;
+                        }
+                        Err(error) => {
+                            error!(target: "borealis_banhammer_nats", "Main(): Connect with extended options: NATS connection error or wrong credentials: {:?}", error);
+                            drop(error);
+                            drop(result);
+                            std::thread::sleep(core::time::Duration::from_millis(500));
+                            continue;
+                        }
                     }
                 }
             }
@@ -806,12 +839,15 @@ fn main() -> Result<(), Error> {
 
         match opts.subcmd {
             SubCommand::Check(context) => {
+
                 let events_processing_rt = actix::System::with_tokio_rt(||
                     events_processing_rt(opts.verbose.clone())
                     .expect("Main(): Check(): Run-time error returned while creating Banhammer's custom Tokio run-time for Actix")
                 );
 
+                // NATS connection events processing run-time tasks
                 events_processing_rt.block_on(async move {
+
                     // Unix signals and key sequence handlers
                     actix::spawn(async move {
                         key_switch().await.unwrap();
@@ -829,23 +865,27 @@ fn main() -> Result<(), Error> {
                         kill_switch_usr2().await.unwrap();
                     });
 
+                    // NATS connection events processing
                     actix::spawn(async move {
                         ConnectionEvent::events_processing(
                             connection_event_tx,
                             connection_event_rx,
                             actual_connection_tx,
                             actual_connection_rx,
-                            context,
+                            context.clone(),
                         )
                         .await;
                     });
 
+                    // Checking of NATS connection events processing
                     ConnectionEvent::events_processing_check(
                         actual_connection_receiver.clone(),
                         connection_event_sender.clone(),
                     );
 
                 });
+
+                // Run NATS connection events processing run-time
                 events_processing_rt.run()
                     .unwrap_or_else(|error|
                         error!(target: "borealis_banhammer_run_time", "Main(): Check(): Banhammer's connection checking events processing loop returned run-time error: {:?}", error)
@@ -853,14 +893,18 @@ fn main() -> Result<(), Error> {
             }
             SubCommand::Run(context) => {
 
-                let connect_args = context.clone();
-
                 let messages_processing_rt = actix::System::with_tokio_rt(||
                     messages_processing_rt(opts.verbose.clone())
                     .expect("Main(): Run(): Run-time error returned while creating Banhammer's custom Tokio run-time for Actix")
                 );
 
+                let events_processing_context = context.clone();
+                let message_producer_context = context.clone();
+                let relayer_message_consumer_context = context.clone();
+
+                // NATS messages processing run-time tasks
                 messages_processing_rt.block_on(async move {
+
                     // Unix signals and key sequence handlers
                     actix::spawn(async move {
                         key_switch().await.unwrap();
@@ -878,34 +922,39 @@ fn main() -> Result<(), Error> {
                         kill_switch_usr2().await.unwrap();
                     });
 
+                    // NATS connection events processing
                     actix::spawn(async move {
                         ConnectionEvent::events_processing(
                             connection_event_tx,
                             connection_event_rx,
                             actual_connection_tx,
                             actual_connection_rx,
-                            connect_args,
+                            events_processing_context,
                         )
                         .await;
                     });
 
+                    // Checking of NATS connection events processing
                     ConnectionEvent::events_processing_check(
                         actual_connection_receiver.clone(),
                         connection_event_sender.clone(),
                     );
 
+                    // Banhammer's ban event messages producer
                     actix::spawn(async move {
                         message_producer(
                             ban_event_stream_rx,
-                            actual_connection_receiver.clone(),
-                            connection_event_sender.clone(),
-                            context.clone(),
+                            actual_connection_rx_for_bh_msg_pub,
+                            connection_event_tx_for_bh_msg_pub,
+                            message_producer_context,
                             opts.verbose,
                         )
                         .await;
                     });
 
                 });
+
+                // Run NATS messages processing run-time
                 messages_processing_rt.run()
                     .unwrap_or_else(|error|
                         error!(target: "borealis_banhammer_run_time", "Main(): Run(): Banhammer's messages processing loop returned run-time error: {:?}", error)
