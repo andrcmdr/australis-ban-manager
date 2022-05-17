@@ -210,3 +210,69 @@ impl LeakyBucket {
         self.0.remove(key);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethereum_types::H160;
+    use std::thread::sleep;
+
+    #[test]
+    fn test_fill() {
+        let addr = H160([
+            0xA, 2, 3, 4, 5, 6, 7, 8, 9, 0xA, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        ]);
+        let bucket1 = BucketName {
+            kind: BucketIdentity::Address,
+            value: BucketNameValue::Address(addr),
+            error: BucketErrorKind::Reverts,
+        };
+        let mut lb = LeakyBucket::default();
+        let res = lb.get_fill(&bucket1, 3);
+        assert_eq!(res, 3);
+
+        lb.fill(&bucket1, res);
+        let res = lb.get_fill(&bucket1, 2);
+        assert_eq!(res, 5);
+
+        lb.fill(&bucket1, res);
+        let res = lb.get_fill(&bucket1, 0);
+        assert_eq!(res, 5);
+    }
+
+    #[test]
+    fn test_leaky() {
+        let addr = H160([
+            0xA, 2, 3, 4, 5, 6, 7, 8, 9, 0xA, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        ]);
+        let bucket1 = BucketName {
+            kind: BucketIdentity::Address,
+            value: BucketNameValue::Address(addr),
+            error: BucketErrorKind::Reverts,
+        };
+        let mut lb = LeakyBucket::default();
+        lb.fill(&bucket1, 10);
+
+        let config = BucketConfig {
+            base_size: 1,
+            leak_rate: 100000,
+            overflow_size: 1,
+            retention: Duration::from_secs(100),
+        };
+
+        let res = lb.get_fill(&bucket1, 0);
+        assert_eq!(res, 10);
+
+        sleep(Duration::from_secs(1));
+        lb.leaky(&bucket1, &config);
+
+        let res = lb.get_fill(&bucket1, 0);
+        assert_eq!(res, 9);
+
+        sleep(Duration::from_secs(2));
+        lb.leaky(&bucket1, &config);
+
+        let res = lb.get_fill(&bucket1, 0);
+        assert_eq!(res, 7);
+    }
+}
