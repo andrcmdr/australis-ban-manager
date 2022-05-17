@@ -2,7 +2,6 @@ use crate::de::Token;
 use ethereum_types::Address;
 use priority_queue::PriorityQueue;
 use serde::{Deserialize, Serialize};
-use std::ops::{Add, Mul, Sub};
 use std::{collections::HashMap, net::IpAddr, time::SystemTime};
 
 pub struct BucketPriorityQueue(PriorityQueue<BucketName, u64>);
@@ -113,14 +112,7 @@ impl BucketName {
     }
 }
 
-#[derive(Debug, Hash, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
-pub enum BucketValue {
-    IncorrectNonce(u32),
-    MaxGas(u32),
-    Reverts(u32),
-    UsedExcessiveGas(u128),
-    Custom(u32),
-}
+pub type BucketValue = u64;
 
 /// Bucket data contain value kind
 /// for specific bucket, and last bucket
@@ -136,141 +128,9 @@ pub struct LeakyBucket(HashMap<BucketName, BucketData>);
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct BucketConfig {
     pub base_size: u64,
-    pub leak_rate: BucketValue,
-    pub overflow_size: BucketValue,
+    pub leak_rate: u64,
+    pub overflow_size: u64,
     pub retention: u64,
-}
-
-impl Add for BucketValue {
-    type Output = Self;
-
-    fn add(self, value: Self) -> Self::Output {
-        match self {
-            BucketValue::IncorrectNonce(val_l) => {
-                if let BucketValue::IncorrectNonce(val_r) = value.clone() {
-                    BucketValue::IncorrectNonce(val_l + val_r)
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::MaxGas(val_l) => {
-                if let BucketValue::MaxGas(val_r) = value.clone() {
-                    BucketValue::MaxGas(val_l + val_r)
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::UsedExcessiveGas(val_l) => {
-                if let BucketValue::UsedExcessiveGas(val_r) = value.clone() {
-                    BucketValue::UsedExcessiveGas(val_l + val_r)
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::Reverts(val_l) => {
-                if let BucketValue::Reverts(val_r) = value.clone() {
-                    BucketValue::Reverts(val_l + val_r)
-                } else {
-                    unimplemented!()
-                }
-            }
-            _ => todo!("Add case fot custom error"),
-        }
-    }
-}
-
-impl Mul for BucketValue {
-    type Output = BucketValue;
-
-    fn mul(self, value: Self) -> Self::Output {
-        match self {
-            BucketValue::IncorrectNonce(val_l) => {
-                if let BucketValue::IncorrectNonce(val_r) = value.clone() {
-                    BucketValue::IncorrectNonce(val_l * val_r)
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::MaxGas(val_l) => {
-                if let BucketValue::MaxGas(val_r) = value.clone() {
-                    BucketValue::MaxGas(val_l * val_r)
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::UsedExcessiveGas(val_l) => {
-                if let BucketValue::UsedExcessiveGas(val_r) = value.clone() {
-                    BucketValue::UsedExcessiveGas(val_l * val_r)
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::Reverts(val_l) => {
-                if let BucketValue::Reverts(val_r) = value.clone() {
-                    BucketValue::Reverts(val_l * val_r)
-                } else {
-                    unimplemented!()
-                }
-            }
-            _ => todo!("Add case fot custom error"),
-        }
-    }
-}
-
-impl Sub for BucketValue {
-    type Output = Self;
-
-    /// If right values is greate or equal to left value
-    /// just set zero value directly
-    fn sub(self, value: Self) -> Self::Output {
-        match self {
-            BucketValue::IncorrectNonce(val_l) => {
-                if let BucketValue::IncorrectNonce(val_r) = value.clone() {
-                    if val_l > val_r {
-                        BucketValue::IncorrectNonce(val_l - val_r)
-                    } else {
-                        BucketValue::IncorrectNonce(0)
-                    }
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::MaxGas(val_l) => {
-                if let BucketValue::MaxGas(val_r) = value.clone() {
-                    if val_l > val_r {
-                        BucketValue::MaxGas(val_l - val_r)
-                    } else {
-                        BucketValue::MaxGas(0)
-                    }
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::UsedExcessiveGas(val_l) => {
-                if let BucketValue::UsedExcessiveGas(val_r) = value.clone() {
-                    if val_l > val_r {
-                        BucketValue::UsedExcessiveGas(val_l - val_r)
-                    } else {
-                        BucketValue::UsedExcessiveGas(0)
-                    }
-                } else {
-                    unimplemented!()
-                }
-            }
-            BucketValue::Reverts(val_l) => {
-                if let BucketValue::Reverts(val_r) = value.clone() {
-                    if val_l > val_r {
-                        BucketValue::Reverts(val_l - val_r)
-                    } else {
-                        BucketValue::Reverts(0)
-                    }
-                } else {
-                    unimplemented!()
-                }
-            }
-            _ => todo!("Add case fot custom error"),
-        }
-    }
 }
 
 impl LeakyBucket {
@@ -281,63 +141,34 @@ impl LeakyBucket {
     /// Calculate new fill value
     pub fn get_fill(&self, key: &BucketName, value: BucketValue) -> BucketValue {
         let old_value = if let Some(data) = self.0.get(&key) {
-            data.value.clone()
+            data.value
         } else {
             return value;
         };
-        match key.error {
-            BucketErrorKind::IncorrectNonce => {
-                if let BucketValue::IncorrectNonce(_) = value.clone() {
-                    old_value.clone() + value
-                } else {
-                    todo!("Add error handling");
-                }
-            }
-            BucketErrorKind::MaxGas => {
-                if let BucketValue::MaxGas(_) = value.clone() {
-                    old_value.clone() + value
-                } else {
-                    todo!("Add error handling");
-                }
-            }
-            BucketErrorKind::UsedExcessiveGas => {
-                if let BucketValue::UsedExcessiveGas(_) = value.clone() {
-                    old_value.clone() + value
-                } else {
-                    todo!("Add error handling");
-                }
-            }
-            BucketErrorKind::Reverts => {
-                if let BucketValue::Reverts(_) = value.clone() {
-                    old_value.clone() + value
-                } else {
-                    todo!("Add error handling");
-                }
-            }
-            _ => todo!("Add case fot custom error"),
-        }
+        old_value + value
     }
 
     /// Update fill
     pub fn fill(&mut self, key: &BucketName, value: BucketValue) {
         let data = self.0.entry(key.clone()).or_insert(BucketData {
-            value: value.clone(),
+            value,
             last_update: BucketPriorityQueue::current_time(),
         });
         *data = BucketData {
-            value: value.clone(),
+            value,
             last_update: data.last_update,
         };
     }
 
     /// Leaky bucket
     pub fn leaky(&mut self, key: &BucketName, config: &BucketConfig) {
+        use std::cmp::max;
+
         let bucket = if let Some(bucket) = self.0.get(key) {
             bucket
         } else {
             return;
         };
-        use std::cmp::max;
         let duration = max(86400 / config.leak_rate.clone(), 1);
         let current_time = BucketPriorityQueue::current_time();
         let leak_time_detla = current_time - bucket.last_update;
@@ -346,40 +177,9 @@ impl LeakyBucket {
             return;
         }
         let leak_amount = config.leak_rate.clone() * leak_time_detla / 86400;
-        let new_value = bucket.value - leak_amount;
-        /*let new_value = match key.error {
-            BucketErrorKind::IncorrectNonce => {
-                if let BucketValue::IncorrectNonce(_) = value.clone() {
-                    value - BucketValue::IncorrectNonce(leak_amount)
-                } else {
-                    todo!("Add error handling");
-                }
-            }
-            BucketErrorKind::MaxGas => {
-                if let BucketValue::MaxGas(_) = value.clone() {
-                    value - BucketValue::MaxGas(leak_amount)
-                } else {
-                    todo!("Add error handling");
-                }
-            }
-            BucketErrorKind::UsedExcessiveGas => {
-                if let BucketValue::UsedExcessiveGas(_) = value.clone() {
-                    value - BucketValue::UsedExcessiveGas(leak_amount)
-                } else {
-                    todo!("Add error handling");
-                }
-            }
-            BucketErrorKind::Reverts => {
-                if let BucketValue::Reverts(_) = value.clone() {
-                    value - BucketValue::Reverts(leak_amount)
-                } else {
-                    todo!("Add error handling");
-                }
-            }
-            _ => todo!("Add case fot custom error"),
-        };*/
+
         let data = BucketData {
-            value: new_value,
+            value: bucket.value - leak_amount,
             last_update: BucketPriorityQueue::current_time(),
         };
         *self.0.entry(key.clone()).or_insert(data.clone()) = data.clone();
@@ -389,128 +189,3 @@ impl LeakyBucket {
         self.0.remove(key);
     }
 }
-
-/*
-#[derive
-(Debug, Serialize, Deserialize, Clone)]
-pub struct NamedBucketConfig {
-    pub name: String,
-    pub base_size: u64,
-    pub leak_rate: u64,
-    pub overflow_size: u64,
-    pub retention: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BucketsConfig {
-    pub near_gas: BucketConfig,
-    pub eth_gas: BucketConfig,
-    pub free_gas: BucketConfig,
-    pub default_relayer_err: BucketConfig,
-    pub default_engine_err: BucketConfig,
-    pub default_evm_revert: BucketConfig,
-    pub relayer_errors: Vec<NamedBucketConfig>,
-    pub engine_errors: Vec<NamedBucketConfig>,
-    pub evm_reverts: Vec<NamedBucketConfig>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Copy, Clone, Eq, PartialEq)]
-pub struct Bucket {
-    value: u64,
-    #[serde(rename = "BaseSize")]
-    base_size: u64,
-    #[serde(rename = "LeakRate")]
-    leak_rate: u64,
-    #[serde(rename = "OverflowSize")]
-    overflow_size: u64,
-    #[serde(rename = "Retention")]
-    retention: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub enum BucketKind {
-    /// Near gas unit is NEAR gas.
-    NearGas(Bucket),
-    /// ETH gas unit is ETH gas.
-    EthGas(Bucket),
-    /// Relayer error bucket values are per error.
-    RelayerErrors(HashMap<String, Bucket>),
-    /// Engine error bucket values are per error.
-    EngineErrors(HashMap<String, Bucket>),
-    /// Revert value is a single revert.
-    Reverts(Bucket),
-    /// Free gas value is a single transaction.
-    FreeGas(Bucket),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Buckets(Vec<BucketKind>);
-
-impl Buckets {
-    pub fn new(config: BucketsConfig) -> Self {
-        let buckets: Vec<BucketKind> = {
-            let capacity = 6
-                + config.relayer_errors.len()
-                + config.engine_errors.len()
-                + config.evm_reverts.len();
-            Vec::with_capacity(capacity)
-        };
-        Buckets(buckets)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn thing() {
-        let mut map = HashMap::new();
-        let bucket = BucketConfig {
-            base_size: 10,
-            leak_rate: 1,
-            overflow_size: 1,
-            retention: 1000,
-        };
-        let named_bucket = NamedBucketConfig {
-            name: "test".to_string(),
-            base_size: 0,
-            leak_rate: 0,
-            overflow_size: 0,
-            retention: 0,
-        };
-        map.insert("EXAMPLE_ERROR".to_string(), bucket);
-        let buckets_config = BucketsConfig {
-            near_gas: bucket,
-            eth_gas: bucket,
-            default_relayer_error: BucketConfig {
-                base_size: 0,
-                leak_rate: 0,
-                overflow_size: 0,
-                retention: 0,
-            },
-            default_engine_error: BucketConfig {
-                base_size: 0,
-                leak_rate: 0,
-                overflow_size: 0,
-                retention: 0,
-            },
-            default_evm_revert: BucketConfig {
-                base_size: 0,
-                leak_rate: 0,
-                overflow_size: 0,
-                retention: 0,
-            },
-            relayer_errors: vec![named_bucket.clone(), named_bucket.clone()],
-            engine_errors: vec![named_bucket.clone(), named_bucket.clone()],
-            evm_reverts: vec![named_bucket.clone(), named_bucket],
-        };
-
-        let toml = toml::to_string_pretty(&buckets_config).unwrap();
-        println!("{}", toml);
-
-        // let json = serde_json::to_string_pretty(&buckets).unwrap();
-        // println!("{}", json);
-    }
-}
-*/

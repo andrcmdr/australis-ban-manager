@@ -9,12 +9,9 @@ use hyper::{
     Body, Request, Response, Server,
 };
 use prometheus::Encoder;
-use std::{
-    fs, io,
-    time::{Duration, Instant},
-};
+use std::{fs, io, time::Instant};
 use tokio::join;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 async fn serve_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     let buffer = Measure::gather();
@@ -44,7 +41,6 @@ async fn serve() {
 async fn process(ban_manager_config: banhammer::Config) {
     let mut ban_manager = Banhammer::new(ban_manager_config);
     let time = Instant::now();
-    let mut next_save = Duration::from_secs(60);
 
     info!("Starting banhammer...");
     loop {
@@ -61,49 +57,17 @@ async fn process(ban_manager_config: banhammer::Config) {
             }
         };
 
-        let ban_reasons = ban_manager.read_input(&relayer_input);
+        let ban_events = ban_manager.read_input(&relayer_input);
         Measure::inc(Counter::MessagesReceived);
-        for ban_reason in ban_reasons {
+        for ban_event in ban_events {
+            info!("Ban event: {:?}", ban_event);
             Measure::inc(Counter::MessagesSent);
-            Measure::inc(Counter::BanReason(ban_reason.clone()));
+            Measure::inc(Counter::BanReason(ban_event.clone()));
         }
 
         Measure::inc(Counter::MessagesProcessed);
 
         ban_manager.tick(time);
-
-        if time.elapsed() > next_save {
-            debug!("Writing state");
-
-            fs::remove_file("./clients.json").ok();
-            let json = serde_json::to_string_pretty(&ban_manager.user_clients()).unwrap();
-            fs::write("./clients.json", json).unwrap();
-
-            fs::remove_file("./addresses.json").ok();
-            let json = serde_json::to_string_pretty(&ban_manager.user_addresses()).unwrap();
-            fs::write("./addresses.json", json).unwrap();
-
-            fs::remove_file("./tokens.json").ok();
-            let json = serde_json::to_string_pretty(&ban_manager.user_tokens()).unwrap();
-            fs::write("./tokens.json", json).unwrap();
-
-            fs::remove_file("./bans.json").ok();
-            let json = serde_json::to_string_pretty(&ban_manager.bans()).unwrap();
-            fs::write("./bans.json", json).unwrap();
-            next_save += Duration::from_secs(60);
-        }
-
-        if time.elapsed() > Duration::from_secs(10800) {
-            let ban_list = ban_manager.bans();
-
-            let banned_clients = ban_list.clients.len();
-            let banned_addresses = ban_list.addresses.len();
-            let banned_tokens = ban_list.tokens.len();
-            info!("Banned Clients: {banned_clients}");
-            info!("Banned Addresses: {banned_addresses}");
-            info!("Banned Tokens: {banned_tokens}");
-            break;
-        }
     }
 }
 

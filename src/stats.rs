@@ -1,4 +1,4 @@
-use crate::banhammer::BanReason;
+use crate::buckets::BucketName;
 use lazy_static::lazy_static;
 use prometheus::{
     register_int_counter, register_int_counter_vec, Encoder, IntCounter, IntCounterVec,
@@ -20,7 +20,7 @@ pub enum Counter {
     MessagesReceived,
     MessagesProcessed,
     MessagesSent,
-    BanReason(BanReason),
+    BanReason(BucketName),
 }
 
 impl Counter {
