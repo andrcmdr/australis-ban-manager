@@ -2,7 +2,7 @@ use crate::buckets::{
     BucketConfig, BucketErrorKind, BucketIdentity, BucketName, BucketNameValue,
     BucketPriorityQueue, LeakyBucket,
 };
-use crate::de::{RelayerMessage, Token, TransactionError};
+use crate::de::{RelayerMessage, TransactionError};
 use serde::{
     de::{self, Error, Visitor},
     Deserialize, Deserializer, Serialize,
@@ -122,10 +122,10 @@ impl Banhammer {
         let near_gas_threshold = {
             if token_exist {
                 self.config.excessive_gas_threshold
-                    * 1_000_000_000_000 as u64
+                    * 1_000_000_000_000
                     * self.config.token_multiplier
             } else {
-                self.config.excessive_gas_threshold * 1_000_000_000_000 as u64
+                self.config.excessive_gas_threshold * 1_000_000_000_000
             }
         };
 

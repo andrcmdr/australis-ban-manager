@@ -6,6 +6,12 @@ use std::{collections::HashMap, net::IpAddr, time::SystemTime};
 
 pub struct BucketPriorityQueue(PriorityQueue<BucketName, u64>);
 
+impl Default for BucketPriorityQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BucketPriorityQueue {
     pub fn new() -> Self {
         Self(PriorityQueue::new())
@@ -61,15 +67,11 @@ impl BucketPriorityQueue {
     /// Free priority queue
     pub fn retention_free(&mut self, retention_time: u64) -> Vec<BucketName> {
         let mut buckets = vec![];
-        loop {
-            if let Some((bucket_name, value)) = self.peek() {
-                if Self::current_time() - value > retention_time {
-                    buckets.push(bucket_name.clone());
-                    // Remove from queue
-                    self.pop();
-                }
-            } else {
-                break;
+        while let Some((bucket_name, value)) = self.peek() {
+            if Self::current_time() - value > retention_time {
+                buckets.push(bucket_name.clone());
+                // Remove from queue
+                self.pop();
             }
         }
         buckets
@@ -133,6 +135,12 @@ pub struct BucketConfig {
     pub retention: u64,
 }
 
+impl Default for LeakyBucket {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LeakyBucket {
     pub fn new() -> Self {
         Self(HashMap::new())
@@ -140,7 +148,7 @@ impl LeakyBucket {
 
     /// Calculate new fill value
     pub fn get_fill(&self, key: &BucketName, value: BucketValue) -> BucketValue {
-        let old_value = if let Some(data) = self.0.get(&key) {
+        let old_value = if let Some(data) = self.0.get(key) {
             data.value
         } else {
             return value;
@@ -169,20 +177,20 @@ impl LeakyBucket {
         } else {
             return;
         };
-        let duration = max(86400 / config.leak_rate.clone(), 1);
+        let duration = max(86400 / config.leak_rate, 1);
         let current_time = BucketPriorityQueue::current_time();
         let leak_time_detla = current_time - bucket.last_update;
         if leak_time_detla < duration {
             // NOP
             return;
         }
-        let leak_amount = config.leak_rate.clone() * leak_time_detla / 86400;
+        let leak_amount = config.leak_rate * leak_time_detla / 86400;
 
         let data = BucketData {
             value: bucket.value - leak_amount,
             last_update: BucketPriorityQueue::current_time(),
         };
-        *self.0.entry(key.clone()).or_insert(data.clone()) = data.clone();
+        *self.0.entry(key.clone()).or_insert(data) = data.clone();
     }
 
     pub fn remove(&mut self, key: &BucketName) {
