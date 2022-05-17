@@ -6,12 +6,12 @@ use crate::de::Token;
 use ethereum_types::Address;
 use priority_queue::PriorityQueue;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::IpAddr, time::Duration, time::SystemTime};
+use std::{cmp::Reverse, collections::HashMap, net::IpAddr, time::Duration, time::SystemTime};
 
 /// Bucket priority queue where:
 /// - key: bucket name
 /// - value: last bucket update
-pub struct BucketPriorityQueue(PriorityQueue<BucketName, u64>);
+pub struct BucketPriorityQueue(PriorityQueue<BucketName, Reverse<u64>>);
 
 impl Default for BucketPriorityQueue {
     fn default() -> Self {
@@ -37,25 +37,25 @@ impl BucketPriorityQueue {
 
     ///  Returns the couple (item, priority) with the greatest priority
     /// in the queue, or None if it is empty.
-    pub fn peek(&self) -> Option<(&BucketName, &u64)> {
+    pub fn peek(&self) -> Option<(&BucketName, &Reverse<u64>)> {
         self.0.peek()
     }
 
     /// Removes the item with the greatest priority from the priority
     /// queue and returns the pair (item, priority), or None if the queue is empty.
-    pub fn pop(&mut self) -> Option<(BucketName, u64)> {
+    pub fn pop(&mut self) -> Option<(BucketName, Reverse<u64>)> {
         self.0.pop()
     }
 
     /// Insert the item-priority pair into the queue.
     /// If an element equal to item was already into the queue, it is updated and the old value of its priority returned in Some; otherwise, returns None.
     pub fn push(&mut self, bucket_name: BucketName) {
-        self.0.push(bucket_name, Self::current_time());
+        self.0.push(bucket_name, Reverse(Self::current_time()));
     }
 
     /// Remove from prioirty queue
-    pub fn remove(&mut self, bucket_name: &BucketName) -> Option<(BucketName, u64)> {
-        self.0.remove(bucket_name)
+    pub fn remove(&mut self, bucket_name: &BucketName) {
+        self.0.remove(bucket_name);
     }
 
     /// Pop from priority queue data that should be freed
@@ -64,7 +64,7 @@ impl BucketPriorityQueue {
         let mut buckets = vec![];
         // Check priority queue and if it's ready pop it
         while let Some((bucket_name, value)) = self.peek() {
-            if Self::current_time() - value > retention_time {
+            if Self::current_time() - value.0 > retention_time {
                 buckets.push(bucket_name.clone());
                 // Remove from queue
                 self.pop();
