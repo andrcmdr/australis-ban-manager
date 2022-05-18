@@ -16,6 +16,7 @@ use crate::buckets::{
 };
 use crate::de::{RelayerMessage, TransactionError};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 const NEAR_GAS_COUNTER: u64 = 202651902028573;
@@ -38,21 +39,23 @@ pub struct Config {
     pub leaky_buckets: Vec<LeakyBucketConfig>,
 }
 
+pub struct RetentionKey {}
+
 /// Basic Banhammer data struct
 pub struct Banhammer {
-    next_retention_check: Duration,
+    next_retention_check: HashMap<String, Duration>,
     config: Config,
     leaky_buckets: LeakyBucket,
-    bucket_pq: BucketPriorityQueue,
+    bucket_pq: HashMap<String, BucketPriorityQueue>,
 }
 
 impl Banhammer {
     pub fn new(config: Config) -> Self {
         Self {
-            next_retention_check: config.leaky_buckets.retention,
+            next_retention_check: HashMap::new(),
             config,
             leaky_buckets: LeakyBucket::default(),
-            bucket_pq: BucketPriorityQueue::default(),
+            bucket_pq: HashMap::new(),
         }
     }
 
@@ -89,7 +92,7 @@ impl Banhammer {
         }
         // Set priority queue for bucket with
         // last_update field as current time
-        self.bucket_pq.push(bucket_name);
+        self.bucket_pq.insert(bucket_name);
         ban_event
     }
 
@@ -193,15 +196,17 @@ impl Banhammer {
 
     /// Tick for retention time for leaky bucket
     pub fn tick(&mut self, time: Instant) {
-        if time.elapsed() > self.next_retention_check {
-            // Get buckets fpr remove.
-            // Retention time in seconds
-            let buckets_to_remove = self.bucket_pq.retention_free(60);
-            for bucket in buckets_to_remove {
-                tracing::info!("bucket removed: {bucket:?}");
-                self.leaky_buckets.remove(&bucket);
+        for next_retention_check in self.next_retention_check {
+            if time.elapsed() > self.next_retention_check {
+                // Get buckets fpr remove.
+                // Retention time in seconds
+                let buckets_to_remove = self.bucket_pq.retention_free(60);
+                for bucket in buckets_to_remove {
+                    tracing::info!("bucket removed: {bucket:?}");
+                    self.leaky_buckets.remove(&bucket);
+                }
+                self.next_retention_check += self.config.leaky_buckets.retention;
             }
-            self.next_retention_check += self.config.leaky_buckets.retention;
         }
     }
 
@@ -263,12 +268,16 @@ mod tests {
             revert_threshold: 10,
             excessive_gas_threshold: 3,
             token_multiplier: 1,
-            leaky_buckets: BucketConfig {
-                base_size: 1,
-                leak_rate: 100000,
-                overflow_size: 10,
-                retention: Duration::from_secs(10),
-            },
+            leaky_buckets: vec![LeakyBucketConfig {
+                identity: BucketIdentity::IP,
+                error_kind: BucketErrorKind::UsedExcessiveGas,
+                bucket: BucketConfig {
+                    base_size: 1,
+                    leak_rate: 100000,
+                    overflow_size: 10,
+                    retention: Duration::from_secs(10),
+                },
+            }],
         };
         let mut bh = Banhammer::new(config.clone());
         let events = bh.process_bucket(
