@@ -253,7 +253,7 @@ mod tests {
         let mut lb = LeakyBucket::default();
         lb.fill(&bucket1, 10);
 
-        let config = BucketConfig {
+        let mut config = BucketConfig {
             base_size: 1,
             leak_rate: 100000,
             overflow_size: 1,
@@ -265,14 +265,43 @@ mod tests {
 
         sleep(Duration::from_secs(1));
         lb.leaky(&bucket1, &config);
-
         let res = lb.get_fill(&bucket1, 0);
         assert_eq!(res, 9);
 
+        // Leaky for x2 leaky rate
         sleep(Duration::from_secs(2));
         lb.leaky(&bucket1, &config);
-
         let res = lb.get_fill(&bucket1, 0);
         assert_eq!(res, 7);
+
+        // Leaky time has not come
+        lb.leaky(&bucket1, &config);
+        let res = lb.get_fill(&bucket1, 0);
+        assert_eq!(res, 7);
+
+        // Leaky rate for NOP
+        config.leak_rate = 10000;
+        sleep(Duration::from_secs(1));
+        lb.leaky(&bucket1, &config);
+        let res = lb.get_fill(&bucket1, 0);
+        assert_eq!(res, 7);
+
+        // Negative fill for leak: 1 - 2 result should be 0
+        config.leak_rate = 100000;
+        lb.fill(&bucket1, 1);
+        sleep(Duration::from_secs(2));
+        lb.leaky(&bucket1, &config);
+        let res = lb.get_fill(&bucket1, 0);
+        assert_eq!(res, 0);
+
+        // Buckt not exists
+        let bucket2 = BucketName {
+            kind: BucketIdentity::Address,
+            value: BucketNameValue::Address(addr),
+            error: BucketErrorKind::MaxGas,
+        };
+        lb.leaky(&bucket2, &config);
+        let res = lb.get_fill(&bucket1, 0);
+        assert_eq!(res, 0);
     }
 }
