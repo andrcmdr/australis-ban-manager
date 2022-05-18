@@ -20,15 +20,22 @@ use std::time::{Duration, Instant};
 
 const NEAR_GAS_COUNTER: u64 = 202651902028573;
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LeakyBucketConfig {
+    pub identity: BucketIdentity,
+    pub error_kind: BucketErrorKind,
+    pub bucket: BucketConfig,
+}
+
 /// Banhammer configs
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub incorrect_nonce_threshold: u64,
     pub max_gas_threshold: u64,
     pub revert_threshold: u64,
     pub excessive_gas_threshold: u64,
     pub token_multiplier: u64,
-    pub leaky_buckets: BucketConfig,
+    pub leaky_buckets: Vec<LeakyBucketConfig>,
 }
 
 /// Basic Banhammer data struct
@@ -239,5 +246,67 @@ impl Banhammer {
         }
 
         ban_events
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn test_excessive_gas() {
+        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let config = Config {
+            incorrect_nonce_threshold: 10,
+            max_gas_threshold: 2,
+            revert_threshold: 10,
+            excessive_gas_threshold: 3,
+            token_multiplier: 1,
+            leaky_buckets: BucketConfig {
+                base_size: 1,
+                leak_rate: 100000,
+                overflow_size: 10,
+                retention: Duration::from_secs(10),
+            },
+        };
+        let mut bh = Banhammer::new(config.clone());
+        let events = bh.process_bucket(
+            BucketIdentity::IP,
+            BucketNameValue::IP(ip),
+            Some(&TransactionError::ErrIncorrectNonce),
+            1_000_000_000_000,
+            false,
+        );
+        assert!(events.is_empty());
+        let bucket_name = BucketName::new(
+            BucketIdentity::IP,
+            BucketNameValue::IP(ip),
+            BucketErrorKind::UsedExcessiveGas,
+        );
+        let res = bh.leaky_buckets.get_fill(&bucket_name, 0);
+        assert_eq!(1_000_000_000_000, res);
+
+        let events = bh.process_bucket(
+            BucketIdentity::IP,
+            BucketNameValue::IP(ip),
+            Some(&TransactionError::ErrIncorrectNonce),
+            1_000_000_000_000,
+            false,
+        );
+        assert!(events.is_empty());
+        let res = bh.leaky_buckets.get_fill(&bucket_name, 0);
+        assert_eq!(2_000_000_000_000, res);
+
+        let events = bh.process_bucket(
+            BucketIdentity::IP,
+            BucketNameValue::IP(ip),
+            Some(&TransactionError::ErrIncorrectNonce),
+            1_000_000_000_100,
+            false,
+        );
+        assert_eq!(events.len(), 1);
+        let res = bh.leaky_buckets.get_fill(&bucket_name, 0);
+        assert_eq!(config.leaky_buckets.base_size, res);
     }
 }

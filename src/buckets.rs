@@ -1,6 +1,6 @@
 //! # Buckets
 //!
-//! Contain Buckets and Leaky for buckets logic
+//! Contains Buckets and Leaky buckets logic
 use crate::de::deserialize_duration;
 use crate::de::Token;
 use ethereum_types::Address;
