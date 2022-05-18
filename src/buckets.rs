@@ -68,6 +68,8 @@ impl BucketPriorityQueue {
                 buckets.push(bucket_name.clone());
                 // Remove from queue
                 self.pop();
+            } else {
+                break;
             }
         }
         buckets
@@ -303,5 +305,40 @@ mod tests {
         lb.leaky(&bucket2, &config);
         let res = lb.get_fill(&bucket1, 0);
         assert_eq!(res, 0);
+    }
+
+    #[test]
+    fn test_retention() {
+        let addr = H160([
+            0xA, 2, 3, 4, 5, 6, 7, 8, 9, 0xA, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        ]);
+        let bucket1 = BucketName {
+            kind: BucketIdentity::Address,
+            value: BucketNameValue::Address(addr),
+            error: BucketErrorKind::Reverts,
+        };
+        let mut pq = BucketPriorityQueue::default();
+        pq.push(bucket1.clone());
+
+        // Chekc is it exists in priority queue
+        let (bucket, _) = pq.peek().unwrap();
+        assert_eq!(&bucket1, bucket);
+
+        // Retention event not happened
+        let buckets = pq.retention_free(100000);
+        assert!(buckets.is_empty());
+        let (bucket, _) = pq.peek().unwrap();
+        assert_eq!(&bucket1, bucket);
+
+        // Check is it still exists
+        let (bucket, _) = pq.peek().unwrap();
+        assert_eq!(&bucket1, bucket);
+
+        // Success retention
+        sleep(Duration::from_secs(2));
+        let buckets = pq.retention_free(1);
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0], bucket1);
+        assert!(pq.peek().is_none());
     }
 }
