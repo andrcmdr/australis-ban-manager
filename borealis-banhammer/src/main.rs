@@ -172,6 +172,94 @@ async fn message_producer(
     }
 }
 
+async fn relayer_message_consumer(
+    relayer_message_stream_tx: mpsc::Sender<RelayerMessage>,
+    actual_connection_rx: watch::Receiver<NATSConnection>,
+    connection_event_tx: mpsc::Sender<ConnectionEvent>,
+    context: Context,
+    verbosity_level: Option<VerbosityLevel>,
+) {
+    let mut error_rate = 0;
+    loop {
+        let nats_connection = actual_connection_rx.borrow().clone();
+        debug!(target: "borealis_banhammer_nats", "Message Consumer [Relayer Message]: Current Connection: NATS Connection: {:?}", &nats_connection);
+
+        let subscription = nats_connection.connection.as_ref().unwrap()
+            .subscribe(
+                context.relayer_rx_subject.as_str(),
+            );
+
+        match &subscription {
+            Ok(subscription) => {
+                debug!(target: "borealis_banhammer_nats", "Message Consumer [Relayer Message]: Actual Connection: NATS Connection: {:?}", &nats_connection);
+                loop {
+                    info!(
+                        target: "borealis_banhammer_nats",
+                        "Message consumer loop started: listening for new relayer messages\n"
+                    );
+
+                    let message = subscription.next_timeout(std::time::Duration::from_millis(3000));
+
+                    match message {
+                        Ok(msg) => {
+                            info!(target: "borealis_banhammer_nats", "Received message:\n{}", &msg);
+                            let relayer_message = serde_json::from_slice::<RelayerMessage>(msg.data.as_ref()).unwrap();
+                            // Print `RelayerMessage` data structure for debug purposes.
+                            if let Some(VerbosityLevel::WithNATSMessagesDump) = verbosity_level {
+                                debug!(
+                                    target: "borealis_banhammer_nats",
+                                    "Received relayer message: {}\n",
+                                    serde_json::to_string_pretty(&relayer_message).unwrap()
+                                );
+                            };
+                            relayer_message_stream_tx
+                                .send(relayer_message)
+                                .await
+                                .unwrap_or_else(|error|
+                                    error!(target: "borealis_banhammer_nats", "Message Consumer [Relayer Message]: Realyer message send error: {:?}", error)
+                                );
+                        },
+                        Err(error) => {
+                            error!(
+                                target: "borealis_banhammer_nats",
+                                "Message wasn't received within 3s timeframe: Error occured due to waiting timeout for message receiving was elapsed: {:?}",
+                                error
+                            );
+                            error_rate+=1;
+                            if error_rate < 10 {
+                                continue;
+                            } else {
+                                error_rate = 0;
+                                break;
+                            };
+                        },
+                    };
+                }
+            },
+            Err(error) => {
+                error!(target: "borealis_banhammer_nats", "Message Consumer [Relayer Messages]: Subscription error: maybe wrong or nonexistent `--subject` name: {:?}", error);
+                error_rate+=1;
+                if error_rate < 10 {
+                    continue;
+                } else {
+                    connection_event_tx
+                        .send(ConnectionEvent::NewConnectionRequest(nats_connection.cid))
+                        .await
+                        .unwrap_or_else(|error|
+                            error!(target: "borealis_banhammer_nats", "Message Consumer [Relayer Messages]: New Connection Request: NATS Connection with CID {} event send error: {:?}", nats_connection.cid, error)
+                        );
+                    error_rate = 0;
+                    drop(error);
+                    drop(subscription);
+                    drop(nats_connection);
+                    tokio::time::sleep(core::time::Duration::from_millis(500)).await;
+                    continue;
+                };
+            },
+        };
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ConnectionEvent
 where
@@ -947,6 +1035,18 @@ fn main() -> Result<(), Error> {
                             actual_connection_rx_for_bh_msg_pub,
                             connection_event_tx_for_bh_msg_pub,
                             message_producer_context,
+                            opts.verbose,
+                        )
+                        .await;
+                    });
+
+                    // Relayer messages consumer
+                    actix::spawn(async move {
+                        relayer_message_consumer(
+                            relayer_message_stream_tx,
+                            actual_connection_rx_for_rlr_msg_sub,
+                            connection_event_tx_for_rlr_msg_sub,
+                            relayer_message_consumer_context,
                             opts.verbose,
                         )
                         .await;
