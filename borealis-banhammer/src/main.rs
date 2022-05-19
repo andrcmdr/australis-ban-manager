@@ -172,6 +172,94 @@ async fn message_producer(
     }
 }
 
+async fn config_message_consumer(
+    config_message_stream_tx: mpsc::Sender<BanhammerConfigMessage>,
+    actual_connection_rx: watch::Receiver<NATSConnection>,
+    connection_event_tx: mpsc::Sender<ConnectionEvent>,
+    context: Context,
+    verbosity_level: Option<VerbosityLevel>,
+) {
+    let mut error_rate = 0;
+    loop {
+        let nats_connection = actual_connection_rx.borrow().clone();
+        debug!(target: "borealis_banhammer_nats", "Message Consumer [Configuration Message]: Current Connection: NATS Connection: {:?}", &nats_connection);
+
+        let subscription = nats_connection.connection.as_ref().unwrap()
+            .subscribe(
+                context.config_rx_subject.as_str(),
+            );
+
+        match &subscription {
+            Ok(subscription) => {
+                debug!(target: "borealis_banhammer_nats", "Message Consumer [Configuration Message]: Actual Connection: NATS Connection: {:?}", &nats_connection);
+                loop {
+                    info!(
+                        target: "borealis_banhammer_nats",
+                        "Message consumer loop started: listening for new configuration messages\n"
+                    );
+
+                    let message = subscription.next_timeout(std::time::Duration::from_millis(3000));
+
+                    match message {
+                        Ok(msg) => {
+                            info!(target: "borealis_banhammer_nats", "Received message:\n{}", &msg);
+                            let config_message = serde_json::from_slice::<BanhammerConfigMessage>(msg.data.as_ref()).unwrap();
+                            // Print `BanhammerConfigMessage` data structure for debug purposes.
+                            if let Some(VerbosityLevel::WithNATSMessagesDump) = verbosity_level {
+                                debug!(
+                                    target: "borealis_banhammer_nats",
+                                    "Received configuration message: {}\n",
+                                    serde_json::to_string_pretty(&config_message).unwrap()
+                                );
+                            };
+                            config_message_stream_tx
+                                .send(config_message)
+                                .await
+                                .unwrap_or_else(|error|
+                                    error!(target: "borealis_banhammer_nats", "Message Consumer [Configuration Message]: Configuration message send error: {:?}", error)
+                                );
+                        },
+                        Err(error) => {
+                            error!(
+                                target: "borealis_banhammer_nats",
+                                "Message wasn't received within 3s timeframe: Error occured due to waiting timeout for message receiving was elapsed: {:?}",
+                                error
+                            );
+                            error_rate+=1;
+                            if error_rate < 10 {
+                                continue;
+                            } else {
+                                error_rate = 0;
+                                break;
+                            };
+                        },
+                    };
+                }
+            },
+            Err(error) => {
+                error!(target: "borealis_banhammer_nats", "Message Consumer [Configuration Messages]: Subscription error: maybe wrong or nonexistent `--subject` name: {:?}", error);
+                error_rate+=1;
+                if error_rate < 10 {
+                    continue;
+                } else {
+                    connection_event_tx
+                        .send(ConnectionEvent::NewConnectionRequest(nats_connection.cid))
+                        .await
+                        .unwrap_or_else(|error|
+                            error!(target: "borealis_banhammer_nats", "Message Consumer [Configuration Messages]: New Connection Request: NATS Connection with CID {} event send error: {:?}", nats_connection.cid, error)
+                        );
+                    error_rate = 0;
+                    drop(error);
+                    drop(subscription);
+                    drop(nats_connection);
+                    tokio::time::sleep(core::time::Duration::from_millis(500)).await;
+                    continue;
+                };
+            },
+        };
+    }
+}
+
 async fn relayer_message_consumer(
     relayer_message_stream_tx: mpsc::Sender<RelayerMessage>,
     actual_connection_rx: watch::Receiver<NATSConnection>,
@@ -216,7 +304,7 @@ async fn relayer_message_consumer(
                                 .send(relayer_message)
                                 .await
                                 .unwrap_or_else(|error|
-                                    error!(target: "borealis_banhammer_nats", "Message Consumer [Relayer Message]: Realyer message send error: {:?}", error)
+                                    error!(target: "borealis_banhammer_nats", "Message Consumer [Relayer Message]: Relayer message send error: {:?}", error)
                                 );
                         },
                         Err(error) => {
@@ -864,7 +952,7 @@ fn main() -> Result<(), Error> {
             mpsc::channel::<BanhammerConfigMessage>(1000);
         let (relayer_message_stream_tx, relayer_message_stream_rx) = 
             mpsc::channel::<RelayerMessage>(1000);
-        let (eth_call_message_stream_tx, eth_call_message_stream_rx) = 
+        let (ethcall_message_stream_tx, ethcall_message_stream_rx) = 
             mpsc::channel::<EthCallMessage>(1000);
 
         // Channels for sending/receiving NATS connection's events
@@ -875,26 +963,31 @@ fn main() -> Result<(), Error> {
             watch::channel::<NATSConnection>(NATSConnection::new());
 
         // Channel rx/tx pair clones for checking of NATS connection events processing
+        // Needed as local variables due to the usage in generator with move semantics on a call site
         let connection_event_sender = connection_event_tx.clone();
         let actual_connection_receiver = actual_connection_tx.subscribe();
 
         // Channel rx/tx pair clones for NATS connection events sent to event processing,
         // and receiving actual NATS connection, in a Banhammer's ban event messages producer
+        // Needed as local variables due to the usage in generator with move semantics on a call site
         let connection_event_tx_for_bh_msg_pub = connection_event_tx.clone();
         let actual_connection_rx_for_bh_msg_pub = actual_connection_tx.subscribe();
 
         // Channel rx/tx pair clones for NATS connection events sent to event processing,
         // and receiving actual NATS connection, in a Banhammer's buckets configuration messages consumer
+        // Needed as local variables due to the usage in generator with move semantics on a call site
         let connection_event_tx_for_bh_conf_msg_sub = connection_event_tx.clone();
         let actual_connection_rx_for_bh_conf_msg_sub = actual_connection_tx.subscribe();
 
         // Channel rx/tx pair clones for NATS connection events sent to event processing,
         // and receiving actual NATS connection, in a Relayer's messages consumer
+        // Needed as local variables due to the usage in generator with move semantics on a call site
         let connection_event_tx_for_rlr_msg_sub = connection_event_tx.clone();
         let actual_connection_rx_for_rlr_msg_sub = actual_connection_tx.subscribe();
 
         // Channel rx/tx pair clones for NATS connection events sent to event processing,
         // and receiving actual NATS connection, in a eth_call messages consumer
+        // Needed as local variables due to the usage in generator with move semantics on a call site
         let connection_event_tx_for_ethcall_msg_sub = connection_event_tx.clone();
         let actual_connection_rx_for_ethcall_msg_sub = actual_connection_tx.subscribe();
 
@@ -986,9 +1079,12 @@ fn main() -> Result<(), Error> {
                     .expect("Main(): Run(): Run-time error returned while creating Banhammer's custom Tokio run-time for Actix")
                 );
 
+                // Needed as local variables due to the usage in generator with move semantics on a call site
                 let events_processing_context = context.clone();
                 let message_producer_context = context.clone();
+                let config_message_consumer_context = context.clone();
                 let relayer_message_consumer_context = context.clone();
+                let ethcall_message_consumer_context = context.clone();
 
                 // NATS messages processing run-time tasks
                 messages_processing_rt.block_on(async move {
@@ -1035,6 +1131,18 @@ fn main() -> Result<(), Error> {
                             actual_connection_rx_for_bh_msg_pub,
                             connection_event_tx_for_bh_msg_pub,
                             message_producer_context,
+                            opts.verbose,
+                        )
+                        .await;
+                    });
+
+                    // Banhammer's buckets configuration messages consumer
+                    actix::spawn(async move {
+                        config_message_consumer(
+                            config_message_stream_tx,
+                            actual_connection_rx_for_bh_conf_msg_sub,
+                            connection_event_tx_for_bh_conf_msg_sub,
+                            config_message_consumer_context,
                             opts.verbose,
                         )
                         .await;
