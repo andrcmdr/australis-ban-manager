@@ -141,6 +141,10 @@ impl Banhammer {
         } else {
             // Check leaky status and leak if it needed
             self.leaky_buckets.leaky(&bucket_name, &config);
+
+            let r = self.leaky_buckets.get_fill(&bucket_name, fill);
+            println!("{}", r);
+
             // Fill bucket
             self.leaky_buckets.fill(&bucket_name, fill_result)
         }
@@ -321,9 +325,10 @@ impl Banhammer {
 mod tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr};
+    use std::thread::sleep;
 
     #[test]
-    fn test_excessive_gas() {
+    fn test_ip_excessive_gas_overflow() {
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let config = Config {
             incorrect_nonce_threshold: 10,
@@ -346,7 +351,7 @@ mod tests {
         let events = bh.process_bucket(
             BucketIdentity::IP,
             BucketNameValue::IP(ip),
-            Some(&TransactionError::ErrIncorrectNonce),
+            None,
             1_000_000_000_000,
             false,
         );
@@ -362,7 +367,7 @@ mod tests {
         let events = bh.process_bucket(
             BucketIdentity::IP,
             BucketNameValue::IP(ip),
-            Some(&TransactionError::ErrIncorrectNonce),
+            None,
             1_000_000_000_000,
             false,
         );
@@ -373,12 +378,66 @@ mod tests {
         let events = bh.process_bucket(
             BucketIdentity::IP,
             BucketNameValue::IP(ip),
-            Some(&TransactionError::ErrIncorrectNonce),
+            None,
             1_000_000_000_100,
             false,
         );
         assert_eq!(events.len(), 1);
+        assert_eq!(events[0], bucket_name);
         let res = bh.leaky_buckets.get_fill(&bucket_name, 0);
-        assert_eq!(config.leaky_buckets.base_size, res);
+        assert_eq!(config.leaky_buckets[0].bucket.base_size, res);
+    }
+
+    #[test]
+    fn test_ip_excessive_gas_leaky() {
+        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let config = Config {
+            incorrect_nonce_threshold: 10,
+            max_gas_threshold: 2,
+            revert_threshold: 10,
+            excessive_gas_threshold: 3,
+            token_multiplier: 1,
+            leaky_buckets: vec![LeakyBucketConfig {
+                identity: BucketIdentity::IP,
+                error_kind: BucketErrorKind::UsedExcessiveGas,
+                bucket: BucketConfig {
+                    base_size: 1,
+                    leak_rate: 100000,
+                    overflow_size: 10,
+                    retention: Duration::from_secs(10),
+                },
+            }],
+        };
+        let mut bh = Banhammer::new(config.clone());
+        let events = bh.process_bucket(
+            BucketIdentity::IP,
+            BucketNameValue::IP(ip),
+            None,
+            1_000_000_000_000,
+            false,
+        );
+        assert!(events.is_empty());
+        let bucket_name = BucketName::new(
+            BucketIdentity::IP,
+            BucketNameValue::IP(ip),
+            BucketErrorKind::UsedExcessiveGas,
+        );
+        let res = bh.leaky_buckets.get_fill(&bucket_name, 0);
+        assert_eq!(1_000_000_000_000, res);
+        let res = bh.leaky_buckets.get_fill(&bucket_name, 0);
+        assert_eq!(1_000_000_000_000, res);
+
+        sleep(Duration::from_secs(5));
+
+        let events = bh.process_bucket(
+            BucketIdentity::IP,
+            BucketNameValue::IP(ip),
+            None,
+            1_000_000_000_000,
+            false,
+        );
+        assert!(events.is_empty());
+        let res = bh.leaky_buckets.get_fill(&bucket_name, 0);
+        assert_eq!(2_000_000_000_000, res);
     }
 }
