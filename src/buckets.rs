@@ -77,7 +77,7 @@ impl BucketPriorityQueue {
 }
 
 /// Bucket Identity - basic identifier for Bucket
-#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum BucketIdentity {
     IP,
     Address,
@@ -93,7 +93,7 @@ pub enum BucketNameValue {
 }
 
 /// BUcket error kind - basic errors for ban event
-#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+#[derive(Debug, Hash, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum BucketErrorKind {
     IncorrectNonce,
     MaxGas,
@@ -114,6 +114,14 @@ pub struct BucketName {
 impl BucketName {
     pub fn new(kind: BucketIdentity, value: BucketNameValue, error: BucketErrorKind) -> Self {
         Self { kind, value, error }
+    }
+
+    pub fn error(&self) -> BucketErrorKind {
+        self.error.clone()
+    }
+
+    pub fn identity(&self) -> BucketIdentity {
+        self.kind.clone()
     }
 }
 

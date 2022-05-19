@@ -39,14 +39,64 @@ pub struct Config {
     pub leaky_buckets: Vec<LeakyBucketConfig>,
 }
 
-pub struct RetentionKey {}
+impl Config {
+    pub fn get_bucket_config(
+        &self,
+        kind: &BucketIdentity,
+        err: &BucketErrorKind,
+    ) -> Option<BucketConfig> {
+        for config in self.leaky_buckets.iter() {
+            if &config.identity == kind && err == &config.error_kind {
+                return Some(config.bucket);
+            }
+        }
+        None
+    }
+}
 
+#[derive(Debug, Hash, Clone, Eq, PartialEq)]
+pub struct RetentionKey {
+    pub kind: BucketIdentity,
+    pub error: BucketErrorKind,
+}
+
+pub struct Priorities {
+    pub ip_revert: BucketPriorityQueue,
+}
+
+impl Priorities {
+    pub fn insert(&mut self, bucket: &BucketName) {
+        match bucket.identity() {
+            BucketIdentity::IP => match bucket.error() {
+                BucketErrorKind::UsedExcessiveGas => (),
+                BucketErrorKind::MaxGas => (),
+                BucketErrorKind::Reverts => (),
+                BucketErrorKind::IncorrectNonce => (),
+                BucketErrorKind::Custom(_) => (),
+            },
+            BucketIdentity::Address => match bucket.error() {
+                BucketErrorKind::UsedExcessiveGas => (),
+                BucketErrorKind::MaxGas => (),
+                BucketErrorKind::Reverts => (),
+                BucketErrorKind::IncorrectNonce => (),
+                BucketErrorKind::Custom(_) => (),
+            },
+            BucketIdentity::Token => match bucket.error() {
+                BucketErrorKind::UsedExcessiveGas => (),
+                BucketErrorKind::MaxGas => (),
+                BucketErrorKind::Reverts => (),
+                BucketErrorKind::IncorrectNonce => (),
+                BucketErrorKind::Custom(_) => (),
+            },
+        }
+    }
+}
 /// Basic Banhammer data struct
 pub struct Banhammer {
-    next_retention_check: HashMap<String, Duration>,
+    next_retention_check: HashMap<RetentionKey, Duration>,
     config: Config,
     leaky_buckets: LeakyBucket,
-    bucket_pq: HashMap<String, BucketPriorityQueue>,
+    bucket_pq: Priorities,
 }
 
 impl Banhammer {
@@ -55,7 +105,9 @@ impl Banhammer {
             next_retention_check: HashMap::new(),
             config,
             leaky_buckets: LeakyBucket::default(),
-            bucket_pq: HashMap::new(),
+            bucket_pq: Priorities {
+                ip_revert: BucketPriorityQueue::default(),
+            },
         }
     }
 
@@ -74,25 +126,27 @@ impl Banhammer {
         let bucket_name = BucketName::new(
             bucket_identity.clone(),
             bucket_value.clone(),
-            bucket_error_kind,
+            bucket_error_kind.clone(),
         );
         let fill_result = self.leaky_buckets.get_fill(&bucket_name, fill);
+        let config = self
+            .config
+            .get_bucket_config(bucket_identity, &bucket_error_kind)
+            .unwrap();
         // Check overflow
         if fill_result >= threshold {
             ban_event = Some(bucket_name.clone());
             // Set leaky bucket ti base size after overflow
-            self.leaky_buckets
-                .fill(&bucket_name, self.config.leaky_buckets.base_size)
+            self.leaky_buckets.fill(&bucket_name, config.base_size)
         } else {
             // Check leaky status and leak if it needed
-            self.leaky_buckets
-                .leaky(&bucket_name, &self.config.leaky_buckets);
+            self.leaky_buckets.leaky(&bucket_name, &config);
             // Fill bucket
             self.leaky_buckets.fill(&bucket_name, fill_result)
         }
         // Set priority queue for bucket with
         // last_update field as current time
-        self.bucket_pq.insert(bucket_name);
+        self.bucket_pq.insert(&bucket_name);
         ban_event
     }
 
@@ -196,16 +250,25 @@ impl Banhammer {
 
     /// Tick for retention time for leaky bucket
     pub fn tick(&mut self, time: Instant) {
-        for next_retention_check in self.next_retention_check {
-            if time.elapsed() > self.next_retention_check {
+        for (key, next_retention) in self.next_retention_check.iter_mut() {
+            if &time.elapsed() > next_retention {
                 // Get buckets fpr remove.
                 // Retention time in seconds
-                let buckets_to_remove = self.bucket_pq.retention_free(60);
+                let _config = self
+                    .config
+                    .get_bucket_config(&key.kind, &key.error)
+                    .unwrap();
+
+                let buckets_to_remove = self.bucket_pq.ip_revert.retention_free(60);
                 for bucket in buckets_to_remove {
                     tracing::info!("bucket removed: {bucket:?}");
                     self.leaky_buckets.remove(&bucket);
                 }
-                self.next_retention_check += self.config.leaky_buckets.retention;
+                let config = self
+                    .config
+                    .get_bucket_config(&key.kind, &key.error)
+                    .unwrap();
+                *next_retention += config.retention;
             }
         }
     }
