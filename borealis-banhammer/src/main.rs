@@ -348,6 +348,94 @@ async fn relayer_message_consumer(
     }
 }
 
+async fn ethcall_message_consumer(
+    ethcall_message_stream_tx: mpsc::Sender<EthCallMessage>,
+    actual_connection_rx: watch::Receiver<NATSConnection>,
+    connection_event_tx: mpsc::Sender<ConnectionEvent>,
+    context: Context,
+    verbosity_level: Option<VerbosityLevel>,
+) {
+    let mut error_rate = 0;
+    loop {
+        let nats_connection = actual_connection_rx.borrow().clone();
+        debug!(target: "borealis_banhammer_nats", "Message Consumer [Eth_Call Message]: Current Connection: NATS Connection: {:?}", &nats_connection);
+
+        let subscription = nats_connection.connection.as_ref().unwrap()
+            .subscribe(
+                context.eth_call_rx_subject.as_str(),
+            );
+
+        match &subscription {
+            Ok(subscription) => {
+                debug!(target: "borealis_banhammer_nats", "Message Consumer [Eth_Call Message]: Actual Connection: NATS Connection: {:?}", &nats_connection);
+                loop {
+                    info!(
+                        target: "borealis_banhammer_nats",
+                        "Message consumer loop started: listening for new eth_call messages\n"
+                    );
+
+                    let message = subscription.next_timeout(std::time::Duration::from_millis(3000));
+
+                    match message {
+                        Ok(msg) => {
+                            info!(target: "borealis_banhammer_nats", "Received message:\n{}", &msg);
+                            let ethcall_message = serde_json::from_slice::<EthCallMessage>(msg.data.as_ref()).unwrap();
+                            // Print `EthCallMessage` data structure for debug purposes.
+                            if let Some(VerbosityLevel::WithNATSMessagesDump) = verbosity_level {
+                                debug!(
+                                    target: "borealis_banhammer_nats",
+                                    "Received eth_call message: {}\n",
+                                    serde_json::to_string_pretty(&ethcall_message).unwrap()
+                                );
+                            };
+                            ethcall_message_stream_tx
+                                .send(ethcall_message)
+                                .await
+                                .unwrap_or_else(|error|
+                                    error!(target: "borealis_banhammer_nats", "Message Consumer [Eth_Call Message]: eth_call message send error: {:?}", error)
+                                );
+                        },
+                        Err(error) => {
+                            error!(
+                                target: "borealis_banhammer_nats",
+                                "Message wasn't received within 3s timeframe: Error occured due to waiting timeout for message receiving was elapsed: {:?}",
+                                error
+                            );
+                            error_rate+=1;
+                            if error_rate < 10 {
+                                continue;
+                            } else {
+                                error_rate = 0;
+                                break;
+                            };
+                        },
+                    };
+                }
+            },
+            Err(error) => {
+                error!(target: "borealis_banhammer_nats", "Message Consumer [Eth_Call Messages]: Subscription error: maybe wrong or nonexistent `--subject` name: {:?}", error);
+                error_rate+=1;
+                if error_rate < 10 {
+                    continue;
+                } else {
+                    connection_event_tx
+                        .send(ConnectionEvent::NewConnectionRequest(nats_connection.cid))
+                        .await
+                        .unwrap_or_else(|error|
+                            error!(target: "borealis_banhammer_nats", "Message Consumer [Eth_Call Messages]: New Connection Request: NATS Connection with CID {} event send error: {:?}", nats_connection.cid, error)
+                        );
+                    error_rate = 0;
+                    drop(error);
+                    drop(subscription);
+                    drop(nats_connection);
+                    tokio::time::sleep(core::time::Duration::from_millis(500)).await;
+                    continue;
+                };
+            },
+        };
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ConnectionEvent
 where
@@ -1155,6 +1243,18 @@ fn main() -> Result<(), Error> {
                             actual_connection_rx_for_rlr_msg_sub,
                             connection_event_tx_for_rlr_msg_sub,
                             relayer_message_consumer_context,
+                            opts.verbose,
+                        )
+                        .await;
+                    });
+
+                    // Eth_Call messages consumer
+                    actix::spawn(async move {
+                        ethcall_message_consumer(
+                            ethcall_message_stream_tx,
+                            actual_connection_rx_for_ethcall_msg_sub,
+                            connection_event_tx_for_ethcall_msg_sub,
+                            ethcall_message_consumer_context,
                             opts.verbose,
                         )
                         .await;
